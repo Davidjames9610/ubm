@@ -1,7 +1,7 @@
-
 import os
 import os.path
 from pathlib import Path
+
 
 class AudioDatastore:
     def __init__(self, folders=None, files=None, labels=None):
@@ -37,6 +37,7 @@ class AudioDatastore:
         self.files = files
         self.labels = labels
 
+
 def subset(audio_datastore: AudioDatastore, label):
     labels = audio_datastore.labels
     files = audio_datastore.files
@@ -52,3 +53,44 @@ def subset(audio_datastore: AudioDatastore, label):
     new_ads = AudioDatastore(folders, files=new_files, labels=new_labels)
 
     return new_ads
+
+def filter(audio_datastore: AudioDatastore, label):
+    labels = audio_datastore.labels
+    files = audio_datastore.files
+    folders = audio_datastore.folders
+    new_labels = []
+    new_files = []
+
+    for i in range(len(labels)):
+        if labels[i] not in label:
+            new_labels.append(labels[i])
+            new_files.append(files[i])
+
+    new_ads = AudioDatastore(folders, files=new_files, labels=new_labels)
+
+    return new_ads
+
+
+# return two ads objects, one with the amount the other with what's left
+def split(audio_datastore: AudioDatastore, amount):
+
+    labels = audio_datastore.labels
+    files = audio_datastore.files
+    folders = audio_datastore.folders
+    new_labels = []
+    new_files = []
+    new_labels_two = []
+    new_files_two = []
+
+    for i in range(len(labels)):
+        if i < amount:
+            new_labels.append(labels[i])
+            new_files.append(files[i])
+        else:
+            new_labels_two.append(labels[i])
+            new_files_two.append(files[i])
+
+    new_ads = AudioDatastore(folders, files=new_files, labels=new_labels)
+    new_ads_two = AudioDatastore(folders, files=new_files_two, labels=new_labels_two)
+    return new_ads, new_ads_two
+
