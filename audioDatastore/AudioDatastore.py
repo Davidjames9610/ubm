@@ -6,8 +6,8 @@ from pathlib import Path
 class AudioDatastore:
     def __init__(self, folders=None, files=None, labels=None):
         self.folders = folders
-        self.files = files
-        self.labels = labels
+        self.files: [] = files
+        self.labels: [] = labels
 
     def set(self, folders=None, files=None, labels=None):
         if folders:
@@ -54,6 +54,7 @@ def subset(audio_datastore: AudioDatastore, label):
 
     return new_ads
 
+
 def filter(audio_datastore: AudioDatastore, label):
     labels = audio_datastore.labels
     files = audio_datastore.files
@@ -73,7 +74,6 @@ def filter(audio_datastore: AudioDatastore, label):
 
 # return two ads objects, one with the amount the other with what's left
 def split(audio_datastore: AudioDatastore, amount):
-
     labels = audio_datastore.labels
     files = audio_datastore.files
     folders = audio_datastore.folders
@@ -93,4 +93,3 @@ def split(audio_datastore: AudioDatastore, amount):
     new_ads = AudioDatastore(folders, files=new_files, labels=new_labels)
     new_ads_two = AudioDatastore(folders, files=new_files_two, labels=new_labels_two)
     return new_ads, new_ads_two
-
