@@ -82,13 +82,26 @@ def split(audio_datastore: AudioDatastore, amount):
     new_labels_two = []
     new_files_two = []
 
+    label_count = 0
+    current_label = ''
+    prev_label = labels[0]
+
+# todo check this!
     for i in range(len(labels)):
-        if i < amount:
+        current_label = labels[i]
+        if current_label == prev_label and label_count < amount:
             new_labels.append(labels[i])
             new_files.append(files[i])
-        else:
+            label_count += 1
+        elif current_label == prev_label and label_count >= amount:
             new_labels_two.append(labels[i])
             new_files_two.append(files[i])
+            label_count += 1
+        elif current_label != prev_label:
+            new_labels.append(labels[i])
+            new_files.append(files[i])
+            label_count = 0
+        prev_label = current_label
 
     new_ads = AudioDatastore(folders, files=new_files, labels=new_labels)
     new_ads_two = AudioDatastore(folders, files=new_files_two, labels=new_labels_two)
