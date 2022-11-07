@@ -55,15 +55,15 @@ def subset(audio_datastore: AudioDatastore, label):
     return new_ads
 
 
-def filter(audio_datastore: AudioDatastore, label):
+def filter(audio_datastore: AudioDatastore, files_to_avoid):
     labels = audio_datastore.labels
     files = audio_datastore.files
     folders = audio_datastore.folders
     new_labels = []
     new_files = []
 
-    for i in range(len(labels)):
-        if labels[i] not in label:
+    for i in range(len(files)):
+        if files[i] not in files_to_avoid:
             new_labels.append(labels[i])
             new_files.append(files[i])
 
@@ -86,7 +86,7 @@ def split(audio_datastore: AudioDatastore, amount):
     current_label = ''
     prev_label = labels[0]
 
-# todo check this!
+    # todo check this!
     for i in range(len(labels)):
         current_label = labels[i]
         if current_label == prev_label and label_count < amount:
@@ -100,7 +100,7 @@ def split(audio_datastore: AudioDatastore, amount):
         elif current_label != prev_label:
             new_labels.append(labels[i])
             new_files.append(files[i])
-            label_count = 0
+            label_count = 1
         prev_label = current_label
 
     new_ads = AudioDatastore(folders, files=new_files, labels=new_labels)
