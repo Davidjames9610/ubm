@@ -116,10 +116,12 @@ class VoiceActivityDetector():
         lens = []
         for i in range(len(starts)):
             lens.append(ends[i] - starts[i])
+        filtered_lens = []
+        for i in range(len(lens)):
+            if lens[i] > 500:
+                filtered_lens.append([int(starts[i]), int(ends[i])])
         max_index = max(range(len(lens)), key=lens.__getitem__)
-        if lens[max_index] < 500:   # if len of speech segment is short ignore
-            return False
-        return [int(starts[max_index]), int(ends[max_index])]
+        return filtered_lens, max_index
 
     def plot_detected_speech_regions(self):
         """ Performs speech detection and plot original signal and speech regions.
