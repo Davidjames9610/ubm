@@ -38,6 +38,8 @@ class AudioDatastore:
         self.labels = labels
 
 
+# by label
+
 def subset(audio_datastore: AudioDatastore, label):
     labels = audio_datastore.labels
     files = audio_datastore.files
