@@ -112,7 +112,7 @@ class VoiceActivityDetector():
         if len(starts) > len(ends):
             ends.append(detected_windows[-1][0])
         if len(starts) == 0:
-            return False
+            return False, False
         lens = []
         for i in range(len(starts)):
             lens.append(ends[i] - starts[i])
