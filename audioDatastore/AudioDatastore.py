@@ -1,7 +1,7 @@
 import os
 import os.path
 from pathlib import Path
-
+import copy
 
 class AudioDatastore:
     def __init__(self, folders=None, files=None, labels=None):
@@ -88,7 +88,7 @@ def split(audio_datastore: AudioDatastore, amount):
     current_label = ''
     prev_label = labels[0]
 
-    # todo check this!
+    # todo check this
     for i in range(len(labels)):
         current_label = labels[i]
         if current_label == prev_label and label_count < amount:
@@ -108,3 +108,16 @@ def split(audio_datastore: AudioDatastore, amount):
     new_ads = AudioDatastore(folders, files=new_files, labels=new_labels)
     new_ads_two = AudioDatastore(folders, files=new_files_two, labels=new_labels_two)
     return new_ads, new_ads_two
+
+
+def get_deep_copy(audio_datastore: AudioDatastore):
+    labels = copy.copy(audio_datastore.labels)
+    files = copy.copy(audio_datastore.files)
+    folders = copy.copy(audio_datastore.folders)
+    return AudioDatastore(folders=folders, files=files, labels=labels)
+
+
+def clean_zeros(audio_datastore: AudioDatastore, features):
+
+    ads_copy = get_deep_copy(audio_datastore)
+    features_copy = copy.copy(features)
