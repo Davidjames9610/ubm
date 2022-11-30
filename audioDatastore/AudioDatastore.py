@@ -125,7 +125,7 @@ def clean_zeros(audio_datastore: AudioDatastore, features):
     zero_indices = []
     removed_files = []
     for i in range(len(features_copy)):
-        if len(features_copy[i]) == 0:
+        if len(features_copy[i]) == 0 or len(features_copy[i]) < 15:
             zero_indices.append(i)
             removed_files.append(ads_copy.labels[i])
 

@@ -11,8 +11,8 @@ eps = np.finfo(np.float64).eps
 # extract features
 
 def fe(signal, sample_rate):
-    mfcc_feats = mfcc(signal=signal, samplerate=sample_rate, ceplifter=0, preemph=0, appendEnergy=False,
-                      winfunc=np.hanning, numcep=10, winlen=0.02, nfft=1024)
+    mfcc_feats = mfcc(signal=signal, samplerate=sample_rate, appendEnergy=False,
+                      winfunc=np.hanning, numcep=20, winlen=0.02, nfft=1024)
     # mfcc_feats_delta = delta(mfcc_feats, 9)
     # mfcc_feats_delta_delta = delta(mfcc_feats_delta, 9)
     # mfcc_complete = np.concatenate((mfcc_feats, mfcc_feats_delta, mfcc_feats_delta_delta), axis=1)
@@ -27,7 +27,7 @@ def helper_feature_extraction(raw_audio_file, norm=None):
     signal = signal / max(signal)
 
     # detect speech
-    v = vad.VoiceActivityDetector(signal_rate, signal, 0.8)
+    v = vad.VoiceActivityDetector(signal_rate, signal, 0.7)
     detected = v.detect_speech()
     idx, maxed_idx = v.convert_windows_to_readible_labels(detected)
 
