@@ -4,6 +4,7 @@ from scipy.io import wavfile
 from annotations import Annotations
 import decimal
 import math
+import librosa
 
 
 def round_half_up(number):
@@ -36,7 +37,8 @@ class GetDataBase:
         self.location_of_wav_file = location_of_wav_file
         self.location_of_annotations = location_of_annotations
 
-        fs, audio = wavfile.read(location_of_wav_file)
+        audio, fs = librosa.load(location_of_wav_file)
+        # fs, audio = wavfile.read(location_of_wav_file)
         self.fs = fs
         self.audio = audio
 

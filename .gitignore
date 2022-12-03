@@ -2,3 +2,5 @@
 *.wav
 *.pickle
 *.aup3
+*.xml
+*.uml
