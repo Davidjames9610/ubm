@@ -58,3 +58,26 @@ def helper_log_sum_exp(x):
     a = np.max(x, axis=0)
     y = a + np.sum(np.exp(x - a), axis=0)
     return y
+
+
+def get_norm_factors(all_features):
+    means = []
+    std = []
+    for feature in all_features:
+        means.append(np.mean(feature, axis=0))
+        std.append(np.std(feature, axis=0))
+
+    means = np.array(means)
+    means = np.mean(means, axis=0)
+
+    std = np.array(std)
+    std = np.mean(std, axis=0)
+
+    class NormFactor:
+        def __init__(self, m, s):
+            self.means = m
+            self.std = s
+
+    return NormFactor(means, std)
+
+

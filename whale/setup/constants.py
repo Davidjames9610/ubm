@@ -1,4 +1,6 @@
 
+# target sampling rate
+SAMPLING_RATE = 8000
 # sound
 
 BRYDES_WAV_A = r'/Users/david/Documents/data/brydesVersfeld/ZOOM2_bpf.wav'
