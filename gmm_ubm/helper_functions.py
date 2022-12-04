@@ -1,6 +1,9 @@
 from sklearn.mixture import GaussianMixture, _gaussian_mixture
 from scipy.special import logsumexp
 import numpy as np
+import librosa
+import scipy.io.wavfile as wav
+import whale.setup.constants as const
 
 eps = np.finfo(np.float64).eps
 
@@ -81,3 +84,36 @@ def get_norm_factors(all_features):
     return NormFactor(means, std)
 
 
+# helper functions
+
+# [2] feature extraction
+# 	• Normalize the audio
+# 	• Use detectSpeech to remove nonspeech regions from the audio
+# 	• Extract features from the audio
+# 	• Normalize the features
+#   * Apply cepstral mean normalization
+
+
+def helper_feature_extraction(raw_audio_file, norm=None):
+    # read in file
+    (signal_rate, signal) = wav.read(raw_audio_file)
+
+    # normalise
+    signal = librosa.util.normalize(signal)
+
+    # detect / vad, not working currently
+
+    # fe
+    mfcc = librosa.feature.mfcc(y=signal, sr=const.SAMPLING_RATE, n_mfcc=13, n_fft=1024).T
+
+    delta = librosa.feature.delta(mfcc, width=3)
+
+    mfcc_feats = np.concatenate([mfcc, delta], axis=1)
+
+    # feature normalisation and cepstral mean subtraction (for channel noise)
+    if norm:
+        mfcc_feats = (mfcc_feats - norm.means) / norm.std
+        mfcc_feats = mfcc_feats - np.mean(mfcc_feats)
+        return mfcc_feats
+    else:
+        return mfcc_feats
