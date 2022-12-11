@@ -1,0 +1,13 @@
+
+
+# how to structure tests,
+# use ads to load data, split it into train, and test,
+# generate data somewhere else or save it ?
+# i want to have several feature types saved in a pickle file and then loop through them, generating $ scores for the different classifiers,
+# would need a wrapper for the classifiers so that they can be tested in the same way,
+# features: MFCC, MFCC + deltas, MFCC + deltas + deltas, gfcc in spafe.features, gfcc + deltas, gfcc + delta deltas,
+# append features to pickle as I go, this is nice because it allows me to go back and replace if I need to - can create a const file, which could also specify the other consts as I go
+# whats step one ? pickle dictionary with features in it, const file with the configuration,
+
+
+also later I would like to apply some preprocessing / effects to stuff - check

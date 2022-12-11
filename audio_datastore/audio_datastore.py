@@ -3,6 +3,8 @@ import os.path
 from pathlib import Path
 import copy
 
+import numpy as np
+
 
 class AudioDatastore:
     def __init__(self, folders=None, files=None, labels=None):
@@ -40,7 +42,6 @@ class AudioDatastore:
 
 
 # by label
-
 def subset(audio_datastore: AudioDatastore, label):
     labels = audio_datastore.labels
     files = audio_datastore.files
@@ -77,34 +78,30 @@ def filter(audio_datastore: AudioDatastore, files_to_avoid):
 
 # return two ads objects, one with the amount the other with what's left
 def split(audio_datastore: AudioDatastore, amount):
+
     labels = audio_datastore.labels
     files = audio_datastore.files
     folders = audio_datastore.folders
+
     new_labels = []
     new_files = []
     new_labels_two = []
     new_files_two = []
 
-    label_count = 0
-    current_label = ''
-    prev_label = labels[0]
+    label_set = np.unique(audio_datastore.labels)
 
-    # todo check this
-    for i in range(len(labels)):
-        current_label = labels[i]
-        if current_label == prev_label and label_count < amount:
-            new_labels.append(labels[i])
-            new_files.append(files[i])
-            label_count += 1
-        elif current_label == prev_label and label_count >= amount:
-            new_labels_two.append(labels[i])
-            new_files_two.append(files[i])
-            label_count += 1
-        elif current_label != prev_label:
-            new_labels.append(labels[i])
-            new_files.append(files[i])
-            label_count = 1
-        prev_label = current_label
+    for label in label_set:
+        label_count = 0
+        for i in range(len(labels)):
+            current_label = labels[i]
+            if current_label == label and label_count < amount:
+                new_labels.append(labels[i])
+                new_files.append(files[i])
+                label_count += 1
+            elif current_label == label and label_count >= amount:
+                new_labels_two.append(labels[i])
+                new_files_two.append(files[i])
+                label_count += 1
 
     new_ads = AudioDatastore(folders, files=new_files, labels=new_labels)
     new_ads_two = AudioDatastore(folders, files=new_files_two, labels=new_labels_two)
