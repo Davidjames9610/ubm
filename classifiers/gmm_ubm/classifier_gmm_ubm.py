@@ -7,6 +7,9 @@ import numpy as np
 from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from typing import List, Optional, Tuple
+import torch
+import torchaudio
 
 eps = np.finfo(np.float64).eps
 
@@ -25,7 +28,7 @@ class ClassifierGMMUBM(ClassifierBase):
         self.relevance_factor = 16
         self.speakers = None
         self.test_results = {}
-
+        self.effects = None
 
     def train(self, ads_train: AudioDatastore):
         print('training for: ', self.fe_method.__str__())
@@ -70,7 +73,8 @@ class ClassifierGMMUBM(ClassifierBase):
             mu = (alpha.T * gmm.means_) + ((1 - alpha).T * self.ubm.means_)
             gmm.means_ = mu
 
-            sigma = alpha * (S / N) + (1 - alpha) * (self.ubm.covariances_.T + np.square(self.ubm.means_).T) - np.square(
+            sigma = alpha * (S / N) + (1 - alpha) * (
+                        self.ubm.covariances_.T + np.square(self.ubm.means_).T) - np.square(
                 gmm.means_).T
 
             sigma = np.maximum(sigma, eps).T
@@ -84,6 +88,9 @@ class ClassifierGMMUBM(ClassifierBase):
 
             self.enrolled_gmms[speakers[i]] = gmm
 
+    def set_effects(self, effects: List[List[str]]):
+        self.effects = effects
+
     def test(self, ads_test: AudioDatastore):
         print('testing for ', self.fe_method.__str__())
 
@@ -92,6 +99,11 @@ class ClassifierGMMUBM(ClassifierBase):
         scores = []
         labels = ads_test.labels
         for i in range(len(ads_test.files)):
+            if self.effects:
+                waveform, sample_rate = torchaudio.load(ads_test.files[i])
+                waveform, sample_rate = torchaudio.sox_effects.apply_effects_tensor(waveform, sample_rate, self.effects)
+
+
             speaker_feature = self.fe_method.extract_and_normalize_feature(ads_test.files[i])
             speakers_scores = []
             for s in range(len(self.speakers)):

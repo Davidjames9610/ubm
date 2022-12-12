@@ -8,7 +8,7 @@
 # # an active research area for many years. An early performance breakthrough was
 # # to use a Gaussian mixture model and universal background model (GMM-UBM) [1]
 # # on acoustic features (usually <docid:audio_ref#mw_b965edcf-ff08-417b-992c-b7f6471536c8
-# # mfcc>). For an example, see <docid:audio_ug#mw_e25a4f73-e645-469c-bb0a-3b5b809e1cdf
+# # fe_spafe>). For an example, see <docid:audio_ug#mw_e25a4f73-e645-469c-bb0a-3b5b809e1cdf
 # # Speaker Verification Using Gaussian Mixture Models>. One of the main difficulties
 # # of GMM-UBM systems involves intersession variability. Joint factor analysis
 # # (JFA) was proposed to compensate for this variability by separately modeling
@@ -130,8 +130,8 @@
 #     windowSamples=round(dot(windowDuration,fs))
 #     hopSamples=round(dot(hopDuration,fs))
 #     overlapSamples=windowSamples - hopSamples
-#     afe=audioFeatureExtractor(SampleRate=copy(fs),Window=hann(windowSamples,'periodic'),OverlapLength=copy(overlapSamples),mfcc=copy(true),mfccDelta=copy(true),mfccDeltaDelta=copy(true))
-#     setExtractorParameters(afe,'mfcc',DeltaWindowLength=copy(deltaWindowLength),NumCoeffs=copy(numCoeffs))
+#     afe=audioFeatureExtractor(SampleRate=copy(fs),Window=hann(windowSamples,'periodic'),OverlapLength=copy(overlapSamples),fe_spafe=copy(true),mfccDelta=copy(true),mfccDeltaDelta=copy(true))
+#     setExtractorParameters(afe,'fe_spafe',DeltaWindowLength=copy(deltaWindowLength),NumCoeffs=copy(numCoeffs))
 #     ##
 # # Extract features from the audio read from the training datastore. Features
 # # are returned as a |numHops|-by-|numFeatures| matrix.

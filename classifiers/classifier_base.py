@@ -19,5 +19,5 @@ class ClassifierBase:
     def test(self, ads_test: AudioDatastore):
         pass
 
-    def get_normalisation(self, ads: AudioDatastore):
-        self.fe_method.get_normalisation(ads)
+    def set_normalisation(self, ads: AudioDatastore):
+        self.fe_method.set_normalisation(ads)
