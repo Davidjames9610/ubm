@@ -10,6 +10,7 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from typing import List, Optional, Tuple
 import torch
 import torchaudio
+from processing.process_method_base import ProcessMethodBase
 
 eps = np.finfo(np.float64).eps
 
@@ -19,8 +20,8 @@ class ClassifierGMMUBM(ClassifierBase):
     def __str__(self):
         return f"ClassifierGMMUBM"
 
-    def __init__(self, fe_method: FeatureExtractorBase):
-        super().__init__(fe_method)
+    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase):
+        super().__init__(fe_method, process_method)
         self.ubm: GaussianMixture | None = None
         self.enrolled_gmms: {GaussianMixture} = {}
         self.num_features = None
@@ -28,13 +29,13 @@ class ClassifierGMMUBM(ClassifierBase):
         self.relevance_factor = 16
         self.speakers = None
         self.test_results = {}
-        self.effects = None
 
     def train(self, ads_train: AudioDatastore):
         print('training for: ', self.fe_method.__str__())
         train_features = []
         for i in range(len(ads_train.files)):
-            train_feature = self.fe_method.extract_and_normalize_feature(ads_train.files[i])
+            signal = self.process_method.pre_process(ads_train.files[i])
+            train_feature = self.fe_method.extract_and_normalize_feature(signal)
             train_features.append(train_feature)
         ubm = GaussianMixture(n_components=self.num_components, covariance_type='diag')
         train_features_flattened = np.array([item for sublist in train_features for item in sublist])
@@ -56,7 +57,8 @@ class ClassifierGMMUBM(ClassifierBase):
             S = np.zeros((self.num_features, self.num_components))
 
             for file in ads_train_subset.files:
-                speaker_feature = self.fe_method.extract_and_normalize_feature(file)
+                signal = self.process_method.pre_process(file)
+                speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
                 if len(speaker_feature) > 0:
                     n, f, s, l = self.__helper_expectation(speaker_feature, self.ubm)
                     N = N + n
@@ -99,12 +101,9 @@ class ClassifierGMMUBM(ClassifierBase):
         scores = []
         labels = ads_test.labels
         for i in range(len(ads_test.files)):
-            if self.effects:
-                waveform, sample_rate = torchaudio.load(ads_test.files[i])
-                waveform, sample_rate = torchaudio.sox_effects.apply_effects_tensor(waveform, sample_rate, self.effects)
-
-
-            speaker_feature = self.fe_method.extract_and_normalize_feature(ads_test.files[i])
+            signal = self.process_method.pre_process(ads_test.files[i])
+            signal = self.process_method.post_process(signal)
+            speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
             speakers_scores = []
             for s in range(len(self.speakers)):
                 speaker_gmm = self.enrolled_gmms[self.speakers[s]]
@@ -116,7 +115,7 @@ class ClassifierGMMUBM(ClassifierBase):
 
             scores.append(self.speakers[np.argmax(speakers_scores)])
 
-        cm = confusion_matrix(np.array(scores), labels, labels=self.speakers)
+        cm = confusion_matrix(np.array(scores), labels, labels=self.speakers, normalize='true')
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.speakers)
         disp.plot(cmap=plt.cm.Blues, values_format='g')
         plt.show()

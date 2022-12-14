@@ -2,6 +2,8 @@ import numpy as np
 
 from audio_datastore.audio_datastore import *
 from feature_extraction.fe_configs import NormFactor
+from processing.process_method_base import ProcessMethodBase
+from processing.processing import *
 
 
 class FeatureExtractorBase:
@@ -12,11 +14,11 @@ class FeatureExtractorBase:
     def __str__(self):
         return f"FeatureExtractorBase"
 
-    def set_normalisation(self, ads: AudioDatastore):
+    def set_normalisation(self, ads: AudioDatastore, process_method: ProcessMethodBase):
         all_features = []
         for file in ads.files:
-            # this will need to be updated with pre-processing too
-            feature = self.extract_feature(file)
+            signal = process_method.pre_process(file)
+            feature = self.extract_feature(signal)
             all_features.append(feature)
 
         means = []
@@ -41,8 +43,8 @@ class FeatureExtractorBase:
         norm_feature = norm_feature - np.mean(norm_feature)
         return norm_feature
 
-    def extract_and_normalize_feature(self, file):
-        feature = self.extract_feature(file)
+    def extract_and_normalize_feature(self, signal):
+        feature = self.extract_feature(signal)
         norm_feature = (feature - self.norm.means) / self.norm.std
         norm_feature = norm_feature - np.mean(norm_feature)
         return norm_feature

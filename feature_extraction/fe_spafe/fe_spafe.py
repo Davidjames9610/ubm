@@ -2,11 +2,12 @@ from feature_extraction.fe_base import FeatureExtractorBase
 import numpy as np
 import librosa
 import scipy.io.wavfile as wav
-from feature_extraction import fe_configs as conf
+import config as conf
 from spafe.features import gfcc, mfcc
 from utils import *
 
-fe_types = ['spafe.features.mfcc.mfcc', 'spafe.features.gfcc.gfcc']
+MFCC = 'spafe.features.mfcc.mfcc'
+GFCC = 'spafe.features.gfcc.gfcc'
 
 
 class FeatureExtractorSpafe(FeatureExtractorBase):
