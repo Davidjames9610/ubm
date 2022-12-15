@@ -2,17 +2,17 @@ from hmmlearn import hmm
 from hmmlearn.hmm import GaussianHMM
 
 from audio_datastore.audio_datastore import AudioDatastore, subset
-from classifiers.classifier_base import ClassifierBase
 from classifiers.hmm.classifier_hmm import ClassifierHMM
 from feature_extraction.fe_base import FeatureExtractorBase
 from processing.process_method_base import ProcessMethodBase
-from helper_functions import *
+from classifiers.fhmm.helper_functions import *
 
 
 class ClassifierFHMM(ClassifierHMM):
 
-    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase):
-        super().__init__(fe_method, process_method)
+    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase,
+                 n_mix=2, n_components=4):
+        super().__init__(fe_method, process_method, n_mix, n_components)
         self.n_components = 4
         self.noise_hmm: GaussianHMM | None = None
         self.hmms: {GaussianHMM} = {}
@@ -22,9 +22,10 @@ class ClassifierFHMM(ClassifierHMM):
     def __str__(self):
         return f"ClassifierFHMM"
 
-    def train_noise_hmm(self, noise_example, snr_noise):
+    def train_noise_hmm(self, noise_signal, snr_noise):
         hmm = GaussianHMM(n_components=self.n_components)
-        hmm.fit(noise_example)
+        noise_feature = self.fe_method.extract_and_normalize_feature(noise_signal)
+        hmm.fit(noise_feature)
         self.noise_hmm = hmm
         self.snr_noise = snr_noise
 
@@ -47,8 +48,8 @@ class ClassifierFHMM(ClassifierHMM):
 
         # 03 combine using snr
         combined_lin = StatParams(
-            (signal_lin['mu']) + (self.snr_noise * noise_lin['mu']),
-            (signal_lin['cov']) + ((np.square(self.snr_noise)) * noise_lin['cov'])
+            signal_lin.mu + self.snr_noise * noise_lin.mu,
+            signal_lin.cov + ((np.square(self.snr_noise)) * noise_lin.cov)
         )
 
         # 04 combined params in cept
@@ -62,7 +63,7 @@ class ClassifierFHMM(ClassifierHMM):
 
         # hmm_combined.covars_ = np.array([np.diag(i) for i in combined_cept['cov']])
         hmm_combined.covars_ = np.array([np.diag(i) for i in speaker_hmm.covars_])
-        hmm_combined.means_ = combined_cept['mu']
+        hmm_combined.means_ = combined_cept.mu
         hmm_combined.startprob_ = speaker_hmm.startprob_
         hmm_combined.transmat_ = speaker_hmm.transmat_
 
