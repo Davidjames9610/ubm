@@ -5,7 +5,7 @@ from processing.process_method_base import ProcessMethodBase
 
 class ClassifierBase:
 
-    def __init__(self, fe_method: FeatureExtractorBase, process_method):
+    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase):
         self.process_method = process_method
         self.fe_method: FeatureExtractorBase = fe_method
 

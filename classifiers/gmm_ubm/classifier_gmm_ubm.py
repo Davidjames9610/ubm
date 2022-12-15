@@ -31,7 +31,6 @@ class ClassifierGMMUBM(ClassifierBase):
         self.test_results = {}
 
     def train(self, ads_train: AudioDatastore):
-        print('training for: ', self.fe_method.__str__())
         train_features = []
         for i in range(len(ads_train.files)):
             signal = self.process_method.pre_process(ads_train.files[i])
@@ -44,7 +43,6 @@ class ClassifierGMMUBM(ClassifierBase):
         self.num_features = train_features[0].shape[1]
 
     def enroll(self, ads_enroll: AudioDatastore):
-        print('enrolling for ', self.fe_method.__str__())
         self.speakers = np.unique(ads_enroll.labels)
 
         speakers = np.unique(ads_enroll.labels)
@@ -76,7 +74,7 @@ class ClassifierGMMUBM(ClassifierBase):
             gmm.means_ = mu
 
             sigma = alpha * (S / N) + (1 - alpha) * (
-                        self.ubm.covariances_.T + np.square(self.ubm.means_).T) - np.square(
+                    self.ubm.covariances_.T + np.square(self.ubm.means_).T) - np.square(
                 gmm.means_).T
 
             sigma = np.maximum(sigma, eps).T
@@ -90,14 +88,18 @@ class ClassifierGMMUBM(ClassifierBase):
 
             self.enrolled_gmms[speakers[i]] = gmm
 
-    def set_effects(self, effects: List[List[str]]):
-        self.effects = effects
+    def test_all(self, ads_test: AudioDatastore, thresholds=None):
+        print('testing for:', self.fe_method.__str__(), self.__str__())
+        if self.process_method.snr_db:
+            print('snr_db:', self.process_method.snr_db)
+            print('reverb', self.process_method.reverb)
+        self.test_confusion_matrix(ads_test)
+        self.test_frr(ads_test, thresholds)
+        self.test_far(ads_test, thresholds)
+        self.test_det(thresholds)
 
-    def test(self, ads_test: AudioDatastore):
-        print('testing for ', self.fe_method.__str__())
 
-        # confusion matrix
-
+    def test_confusion_matrix(self, ads_test: AudioDatastore):
         scores = []
         labels = ads_test.labels
         for i in range(len(ads_test.files)):
@@ -115,9 +117,117 @@ class ClassifierGMMUBM(ClassifierBase):
 
             scores.append(self.speakers[np.argmax(speakers_scores)])
 
+        self.test_results['cm'] = scores
+
         cm = confusion_matrix(np.array(scores), labels, labels=self.speakers, normalize='true')
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.speakers)
         disp.plot(cmap=plt.cm.Blues, values_format='g')
+        plt.show()
+
+    def test_frr(self, ads_test, thresholds=None):
+        llr = []
+        for i in range(len(self.speakers)):
+            cur_speaker = self.speakers[i]
+            local_gmm = self.enrolled_gmms[cur_speaker]
+            ads_test_subset = subset(ads_test, cur_speaker)
+            llr_per_speaker = np.zeros(len(ads_test_subset.files))
+
+            for y in range(len(ads_test_subset.files)):
+                file = ads_test_subset.files[y]
+                signal = self.process_method.pre_process(file)
+                signal = self.process_method.post_process(signal)
+                speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
+
+                log_likelihood = local_gmm._estimate_weighted_log_prob(speaker_feature)
+                likelihood_speaker = logsumexp(log_likelihood, axis=1)
+
+                log_likelihood = self.ubm._estimate_weighted_log_prob(speaker_feature)
+                likelihood_ubm = logsumexp(log_likelihood, axis=1)
+
+                llr_per_speaker[y] = np.mean(self.running_mean(likelihood_speaker - likelihood_ubm, 3))
+
+            llr.append(llr_per_speaker)
+        llr_cat = np.concatenate(llr, axis=0)
+
+        self.test_results['frr'] = llr_cat
+
+        if thresholds is None:
+            thresholds = np.arange(-0.5, 2.5, 0.01)
+        thresholds = np.expand_dims(thresholds, axis=1)
+        ones = np.ones((1, len(llr_cat)))
+        thresholds = thresholds * ones
+        frr = np.mean((llr_cat < thresholds), axis=1)
+        plt.plot(thresholds, frr * 100)
+        plt.title('false rejection rate vs threshold')
+        plt.show()
+
+    def test_far(self, ads_test, thresholds=None):
+
+        llr = []
+
+        for i in range(len(self.speakers)):
+            cur_speaker = self.speakers[i]
+            local_gmm = self.enrolled_gmms[cur_speaker]
+            filtered = self.speakers[i] != self.speakers
+            filtered_speakers = self.speakers[filtered]
+            ads_test_subset = subset(ads_test, filtered_speakers)
+            llr_per_speaker = np.zeros(len(ads_test_subset.files))
+
+            for y in range(len(ads_test_subset.files)):
+                file = ads_test_subset.files[y]
+                signal = self.process_method.pre_process(file)
+                signal = self.process_method.post_process(signal)
+                speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
+
+                log_likelihood = local_gmm._estimate_weighted_log_prob(speaker_feature)
+                likelihood_speaker = logsumexp(log_likelihood, axis=1)
+
+                log_likelihood = self.ubm._estimate_weighted_log_prob(speaker_feature)
+                likelihood_ubm = logsumexp(log_likelihood, axis=1)
+
+                llr_per_speaker[y] = np.mean(self.running_mean(likelihood_speaker - likelihood_ubm, 3))
+
+            llr.append(llr_per_speaker)
+
+        self.test_results['far'] = llr
+
+        if thresholds is None:
+            thresholds = np.arange(-0.5, 2.5, 0.01)
+        llr_cat = np.concatenate(llr, axis=0)
+        thresholds = np.arange(-0.5, 2.5, 0.01)
+        thresholds = np.expand_dims(thresholds, axis=1)
+        ones = np.ones((1, len(llr_cat)))
+        thresholds = thresholds * ones
+        far = np.mean((llr_cat > thresholds), axis=1)
+        plt.plot(thresholds, far * 100)
+        plt.title('false acceptance rate vs threshold')
+        plt.show()
+
+    def test_det(self, thresholds=None):
+
+        if thresholds is None:
+            thresholds = np.arange(-0.5, 2.5, 0.01)
+
+        far = self.test_results['far']
+        frr = self.test_results['frr']
+        # plot de
+        x1 = far * 100
+        y1 = frr * 100
+        plt.plot(x1, y1)
+        plt.title('DET tradeoff')
+        plt.xlabel('far')
+        plt.ylabel('frr')
+        plt.show()
+
+        diff = (np.abs(far - frr))
+        idx = np.argmin(diff)
+        EERThreshold = thresholds[idx]
+        EER = np.mean([far[idx], frr[idx]])
+
+        plt.plot(thresholds, far)
+        plt.plot(thresholds, frr)
+        plt.plot(EERThreshold[0], EER, marker="o", markersize=10, markeredgecolor="red", markerfacecolor="red")
+        plt.title('EER')
         plt.show()
 
     @staticmethod

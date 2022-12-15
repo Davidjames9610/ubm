@@ -16,17 +16,17 @@ class ClassifierHMM(ClassifierBase):
     def __str__(self):
         return f"ClassifierHMM"
 
-    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase):
+    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase,
+                 n_mix=2, n_components=4
+                 ):
         super().__init__(fe_method, process_method)
-        self.n_mix = 3
         self.hmms: {GaussianHMM} = {}
-        self.num_features = None
-        self.n_components = 4
+        self.n_mix = n_mix
+        self.n_components = n_components
         self.speakers = None
         self.test_results = {}
 
     def train(self, ads_train: AudioDatastore):
-
         speakers = np.unique(ads_train.labels)
         self.speakers = speakers
         self.hmms = {}
@@ -49,7 +49,6 @@ class ClassifierHMM(ClassifierBase):
         print('testing for ', self.fe_method.__str__())
 
         # confusion matrix
-
         scores = []
         labels = ads_test.labels
         for i in range(len(ads_test.files)):
@@ -68,3 +67,4 @@ class ClassifierHMM(ClassifierBase):
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.speakers)
         disp.plot(cmap=plt.cm.Blues, values_format='g')
         plt.show()
+

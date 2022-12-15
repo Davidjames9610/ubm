@@ -4,7 +4,7 @@ from processing.processing import Processing as Proc
 # create combinations of processing functions for pre- and post-processing
 class ProcessMethodBase:
 
-    def __init__(self, snr_db, reverb=True):
+    def __init__(self, snr_db, reverb=False):
         self.snr_db = snr_db
         self.reverb = reverb
 
@@ -17,4 +17,7 @@ class ProcessMethodBase:
         return Proc.normalize_signal(signal)
 
     def post_process(self, signal):
-        return Proc.add_reverb(Proc.add_noise(signal, self.snr_db))
+        signal = Proc.add_noise(signal, self.snr_db)
+        if self.reverb:
+            signal = Proc.add_reverb(signal)
+        return signal
