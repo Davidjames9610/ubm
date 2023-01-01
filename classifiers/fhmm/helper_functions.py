@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.fft import dct
+# from scipy.fft import dct
 import matplotlib.pyplot as plt
+from scipy.fftpack import dct, idct
 plt.style.use('default')
 
 
@@ -15,7 +16,7 @@ class ParamMapper:
         self.dim = (mu.shape[1])
         self.states = mu.shape[0]
         self.km_sqr = np.power(self.states, 2)  # assume no more than two chains for the moment
-        self.D = dct(np.eye(self.dim), axis=0)
+        self.D = dct(np.eye(self.dim), type=2, axis=0, norm="ortho")
         self.D_inv = np.linalg.inv(self.D)
 
     def map_cepstral_to_log(self, stat_params: StatParams):
@@ -25,6 +26,7 @@ class ParamMapper:
         mu_log = []
         cov_log = []
         for s in range(self.states):
+            # mu_log.append(idct(x=mu_c[s], type=2, axis=0, norm="ortho"))
             mu_log.append(self.D_inv @ mu_c[s])
             cov_log.append(self.D_inv @ cov_c[s] @ self.D_inv.T)
 

@@ -23,15 +23,48 @@ class ClassifierFHMM(ClassifierHMM):
         return f"ClassifierFHMM"
 
     def train_noise_hmm(self, noise_signal, snr_noise):
-        hmm = GaussianHMM(n_components=self.n_components)
-        noise_feature = self.fe_method.extract_and_normalize_feature(noise_signal)
+        hmm = GaussianHMM(n_components=1)
+        noise_feature = self.fe_method.extract_feature(noise_signal)
         hmm.fit(noise_feature)
         self.noise_hmm = hmm
         self.snr_noise = snr_noise
 
     def adapt_speaker_models(self):
         for key in self.hmms:
-            self.adapt_speaker_model(self.hmms[key])
+            self.hmms[key] = self.adapt_speaker_model(self.hmms[key])
+
+    def adapt_speaker_model_log_max(self, speaker_hmm: hmm.GaussianHMM):
+        # 01 deconstruct hmm
+        n_states = speaker_hmm.transmat_.shape[0]
+
+        signal_cept = StatParams(speaker_hmm.means_, speaker_hmm.covars_)
+        noise_cept = StatParams(self.noise_hmm.means_, self.noise_hmm.covars_)
+
+        pm_signal = ParamMapper(signal_cept.mu)
+        pm_noisy = ParamMapper(noise_cept.mu)
+
+        signal_log = pm_signal.map_cepstral_to_log(signal_cept)
+        noise_log = pm_noisy.map_cepstral_to_log(noise_cept)
+
+        # 03 combine using snr
+        combined_log = StatParams(
+            np.maximum(signal_log.mu, noise_log.mu),
+            np.maximum(signal_log.cov, noise_log.cov)
+        )
+
+        combined_cept = pm_signal.map_log_to_cepstral(combined_log)
+
+        # 05 combined hmm
+        hmm_combined = hmm.GaussianHMM(n_states, covariance_type='diag')
+        hmm_combined.n_features = speaker_hmm.covars_.shape[1]
+
+        # hmm_combined.covars_ = np.array([np.diag(i) for i in combined_cept['cov']])
+        hmm_combined.covars_ = np.array([np.diag(i) for i in combined_cept.cov])
+        hmm_combined.means_ = combined_cept.mu
+        hmm_combined.startprob_ = speaker_hmm.startprob_
+        hmm_combined.transmat_ = speaker_hmm.transmat_
+
+        return hmm_combined
 
     def adapt_speaker_model(self, speaker_hmm: hmm.GaussianHMM):
         # 01 deconstruct hmm
@@ -54,7 +87,7 @@ class ClassifierFHMM(ClassifierHMM):
 
         # 04 combined params in cept
         combined_cept = pm_signal.map_linear_to_cepstral(combined_lin)
-        combined_cept.mu[:, 0] = signal_cept.mu[:, 0]  # for some reason first gets confused
+        # combined_cept.mu[:, 0] = noise_cept.mu[:, 0]  # for some reason first gets confused
         # combined_cept['mu'][:, 1] = signal_cept['mu'][:, 1]
 
         # 05 combined hmm
@@ -62,12 +95,12 @@ class ClassifierFHMM(ClassifierHMM):
         hmm_combined.n_features = speaker_hmm.covars_.shape[1]
 
         # hmm_combined.covars_ = np.array([np.diag(i) for i in combined_cept['cov']])
-        hmm_combined.covars_ = np.array([np.diag(i) for i in speaker_hmm.covars_])
+        hmm_combined.covars_ = np.array([np.diag(i) for i in combined_cept.cov])
         hmm_combined.means_ = combined_cept.mu
         hmm_combined.startprob_ = speaker_hmm.startprob_
         hmm_combined.transmat_ = speaker_hmm.transmat_
 
-        return hmm_combined, combined_cept
+        return hmm_combined
 
     def train(self, ads_train: AudioDatastore):
         super().train(ads_train)
