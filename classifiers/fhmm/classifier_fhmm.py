@@ -17,17 +17,16 @@ class ClassifierFHMM(ClassifierHMM):
         self.noise_hmm: GaussianHMM | None = None
         self.hmms: {GaussianHMM} = {}
         self.speakers: None
-        self.snr_noise = None
+        self.snr_noise = 1
 
     def __str__(self):
         return f"ClassifierFHMM"
 
-    def train_noise_hmm(self, noise_signal, snr_noise):
+    def train_noise_hmm(self, noise_signal):
         hmm = GaussianHMM(n_components=1)
         noise_feature = self.fe_method.extract_feature(noise_signal)
         hmm.fit(noise_feature)
         self.noise_hmm = hmm
-        self.snr_noise = snr_noise
 
     def adapt_speaker_models(self):
         for key in self.hmms:

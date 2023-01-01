@@ -8,8 +8,9 @@ from processing.processing import *
 
 class FeatureExtractorBase:
 
-    def __init__(self):
+    def __init__(self, normalize=False):
         self.norm: NormFactor | None = None
+        self.normalize = normalize
 
     def __str__(self):
         return f"FeatureExtractorBase"
@@ -45,6 +46,7 @@ class FeatureExtractorBase:
 
     def extract_and_normalize_feature(self, signal):
         feature = self.extract_feature(signal)
-        norm_feature = (feature - self.norm.means) / self.norm.std
-        norm_feature = norm_feature - np.mean(norm_feature)
-        return norm_feature
+        if self.normalize:
+            feature = (feature - self.norm.means) / self.norm.std
+            feature = feature - np.mean(feature)
+        return feature

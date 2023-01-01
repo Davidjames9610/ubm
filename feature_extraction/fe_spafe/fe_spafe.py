@@ -4,7 +4,7 @@ import librosa
 import scipy.io.wavfile as wav
 import config as conf
 from spafe.features import gfcc, mfcc
-from utils import *
+from utils import get_class
 
 MFCC = 'spafe.features.mfcc.mfcc'
 GFCC = 'spafe.features.gfcc.gfcc'
@@ -12,8 +12,8 @@ GFCC = 'spafe.features.gfcc.gfcc'
 
 class FeatureExtractorSpafe(FeatureExtractorBase):
 
-    def __init__(self, fe_type):
-        super().__init__()
+    def __init__(self, fe_type, normalize=False):
+        super().__init__(normalize)
         self.fe_type = fe_type
         self.fe_func = get_class(self.fe_type)
 
