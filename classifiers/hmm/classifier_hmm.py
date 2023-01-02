@@ -63,7 +63,7 @@ class ClassifierHMM(ClassifierBase):
 
             scores.append(self.speakers[np.argmax(speakers_scores)])
 
-        cm = confusion_matrix(np.array(scores), labels, labels=self.speakers, normalize=None)
+        cm = confusion_matrix(np.array(scores), labels, labels=self.speakers, normalize='true')
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.speakers)
         disp.plot(cmap=plt.cm.Blues, values_format='g')
         plt.show()

@@ -5,7 +5,7 @@ import numpy as np
 # create combinations of processing functions for pre- and post-processing
 class ProcessMethodBase:
 
-    def __init__(self, snr_db=None, reverb=False, signal_average_power=0):
+    def __init__(self, snr_db=None, reverb=False, signal_average_power=0.1):
         self.snr_db = snr_db
         self.reverb = reverb
         self.noise_ap = signal_average_power / np.power((snr_db / 10), 10)

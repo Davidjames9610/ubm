@@ -110,7 +110,7 @@
 #     ##
 # # You can reduce the data set and the number of parameters used in this example
 # # to speed up the runtime at the cost of performance. In general, reducing the
-# # data set is a good practice for development and debugging.
+# # data set is a good practice for pmc_development and debugging.
 #
 #     speedUpExample=copy(true)
 #     if speedUpExample:
