@@ -37,7 +37,6 @@ class Processing:
         return signal_reverb
 
     @staticmethod
-    def add_noise(signal, snr, signal_average_power=0.1):
-        noise_average_power = signal_average_power / snr
+    def add_noise(signal, noise_average_power):
         noise = np.random.normal(0, np.sqrt(noise_average_power), len(signal))
         return signal + noise
