@@ -20,7 +20,7 @@ class ClassifierGMMUBM(ClassifierBase):
     def __str__(self):
         return f"ClassifierGMMUBM"
 
-    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase):
+    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase, ):
         super().__init__(fe_method, process_method)
         self.ubm: GaussianMixture | None = None
         self.enrolled_gmms: {GaussianMixture} = {}
@@ -94,9 +94,9 @@ class ClassifierGMMUBM(ClassifierBase):
             print('snr_db:', self.process_method.snr_db)
             print('reverb', self.process_method.reverb)
         self.test_confusion_matrix(ads_test)
-        self.test_frr(ads_test, thresholds)
-        self.test_far(ads_test, thresholds)
-        self.test_det(thresholds)
+        # self.test_frr(ads_test, thresholds)
+        # self.test_far(ads_test, thresholds)
+        # self.test_det(thresholds)
 
 
     def test_confusion_matrix(self, ads_test: AudioDatastore):

@@ -24,6 +24,7 @@ def calc_mf_like(X, T, mf, M, K, Mu, Cov, P, Pi):
     kpm = np.power(K, M)
 
     k1 = np.power((2 * np.pi), (-p / 2))
+    k1 = np.round(k1, 4)
 
     dd = np.zeros((kpm, M), dtype=int)
     Mf = np.ones((T, kpm))
@@ -35,21 +36,23 @@ def calc_mf_like(X, T, mf, M, K, Mu, Cov, P, Pi):
             Mub[i, :] = Mub[i, :] + Mu[j * K + dd[i, j], :]
             Mf[:, i] = Mf[:, i] * mf[:, j * K + dd[i, j]]
 
-    logPi = np.log(np.where(Pi < tiny, tiny, Pi))
-    logP = np.log(np.where(P < tiny, tiny, P))
-    logmf = np.log(np.where(mf < tiny, tiny, mf))
+    logPi = np.round(np.log(np.where(Pi < tiny, tiny, Pi)), 4)
+    logP = np.round(np.log(np.where(P < tiny, tiny, P)), 4)
+    logmf = np.round(np.log(np.where(mf < tiny, tiny, mf)), 4)
 
     lik = 0
 
     iCov = np.linalg.inv(Cov)
+    iCov = np.round(iCov, 4)
     k2 = k1 / np.sqrt(np.linalg.det(Cov))
+    k2 = np.round(k2, 4)
     for i in range(kpm):
         d = (np.ones((T, 1)) @ Mub[i, :])[..., np.newaxis] - X
         lik = lik - 0.5 * np.sum(Mf[:, i] * np.sum(((d @ iCov) * d), axis=1))  # will break for
 
     lik = lik + T * np.log(k2)
 
-    lik + (mf[0, :] @ np.resize(logPi.T, logPi.shape[0] + logPi.shape[1])) - np.sum(mf[0, :] * logmf[0, :])
+    lik = lik + (mf[0, :] @ np.resize(logPi.T, logPi.shape[0] + logPi.shape[1])) - np.sum(mf[0, :] * logmf[0, :])
 
     for i in range(1, T):
         d1 = i
