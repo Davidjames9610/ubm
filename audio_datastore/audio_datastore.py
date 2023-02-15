@@ -7,10 +7,11 @@ import numpy as np
 
 
 class AudioDatastore:
-    def __init__(self, folders=None, files=None, labels=None):
+    def __init__(self, folders=None, files=None, labels=None, features=False):
         self.folders = folders
         self.files: [] = files
         self.labels: [] = labels
+        self.features = features
 
     def set(self, folders=None, files=None, labels=None):
         if folders:
@@ -115,24 +116,24 @@ def get_deep_copy(audio_datastore: AudioDatastore):
     return AudioDatastore(folders=folders, files=files, labels=labels)
 
 
-def clean_zeros(audio_datastore: AudioDatastore, features):
-    ads_copy = get_deep_copy(audio_datastore)
-    features_copy = copy.copy(features)
-
-    zero_indices = []
-    removed_files = []
-    for i in range(len(features_copy)):
-        if len(features_copy[i]) == 0 or len(features_copy[i]) < 15:
-            zero_indices.append(i)
-            removed_files.append(ads_copy.labels[i])
-
-    for index in sorted(zero_indices, reverse=True):
-        del features_copy[index]
-        del ads_copy.labels[index]
-        del ads_copy.files[index]
-
-    for file in ads_copy.files:
-        if file in removed_files:
-            print('oh deary me')
-
-    return ads_copy, features_copy
+# def clean_zeros(audio_datastore: AudioDatastore, features):
+#     ads_copy = get_deep_copy(audio_datastore)
+#     features_copy = copy.copy(features)
+#
+#     zero_indices = []
+#     removed_files = []
+#     for i in range(len(features_copy)):
+#         if len(features_copy[i]) == 0 or len(features_copy[i]) < 15:
+#             zero_indices.append(i)
+#             removed_files.append(ads_copy.labels[i])
+#
+#     for index in sorted(zero_indices, reverse=True):
+#         del features_copy[index]
+#         del ads_copy.labels[index]
+#         del ads_copy.files[index]
+#
+#     for file in ads_copy.files:
+#         if file in removed_files:
+#             print('oh deary me')
+#
+#     return ads_copy, features_copy

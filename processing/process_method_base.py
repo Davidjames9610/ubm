@@ -9,7 +9,10 @@ class ProcessMethodBase:
     def __init__(self, snr_db=None, reverb=False, signal_average_power=0.1, model=None, get_speech_timestamps=None):
         self.snr_db = snr_db
         self.reverb = reverb
-        self.noise_ap = signal_average_power / np.power((snr_db / 10), 10)
+        if snr_db:
+            self.noise_ap = signal_average_power / np.power((snr_db / 10), 10)
+        else:
+            self.noise_ap = None
         self.model = model
         self.get_speech_timestamps = get_speech_timestamps
 
