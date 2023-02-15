@@ -44,6 +44,20 @@ class FileToTensor:
         transformed_audio, _ = torchaudio.sox_effects.apply_effects_file(file, sox_effects, normalize=True)
         return transformed_audio
 
+
+def collect_chunks_custom(speech_timestamps, audio_data):
+    segments = []
+    for i in range(len(speech_timestamps)):
+        start = speech_timestamps[i]['start']
+        end = speech_timestamps[i]['end']
+        segments.append(audio_data[:, start: end])
+    segments_flattened = torch.cat(segments)
+    if len(segments_flattened) > 0:
+        return segments_flattened
+    else:
+        return audio_data
+
+
 class SileroVad:
     def __init__(self, sample_rate=config.SAMPLING_RATE):
         model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
@@ -64,8 +78,9 @@ class SileroVad:
 
     def __call__(self, audio_data):
         speech_timestamps = self.get_speech_timestamps(audio_data, self.model, sampling_rate=self.sample_rate)
-        transformed_audio = self.collect_chunks(speech_timestamps, audio_data)
+        transformed_audio = collect_chunks_custom(speech_timestamps, audio_data)
         return transformed_audio
+
 
 class NormalizeSox:
     def __init__(self, sample_rate=config.SAMPLING_RATE):
