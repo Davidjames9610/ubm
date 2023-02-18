@@ -185,7 +185,7 @@ def plot_specgram(waveform, sample_rate, title="Spectrogram", xlim=None):
     plt.show(block=False)
 
 
-def play_audio(waveform, sample_rate):
+def play_audio(waveform, sample_rate=config.SAMPLE_RATE):
     waveform = waveform.numpy()
 
     num_channels, num_frames = waveform.shape

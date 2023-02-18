@@ -1,14 +1,33 @@
 # utils to use across all files
 import spafe
-
 import config as config
 import matplotlib.pyplot as plt
 import torch
+import numpy as np
+import logging
 
 
-# todo clean up this page a lot, just use spafe for vis stuff
+# visualizing
+# need to import torch functions here and make them compatible with numpy
+# plot spectrogram and plot time
+
+
+def plot_spectrogram(waveform):
+    spafe.utils.vis.show_features(waveform, 'title', 'y', 'x')
+
 
 def get_class(kls):
+    """ get class for given string
+
+    Note:
+
+    Args:
+        kls: (string) : full class name to be used to find either the class or method
+        in the module
+
+    Returns:
+        (string): Resulting class.
+    """
     parts = kls.split('.')
     module = ".".join(parts[:-1])
     m = __import__(module)
@@ -17,25 +36,68 @@ def get_class(kls):
     return m
 
 
-"""
-Args:
-    kls:    (string) : full class name to be used to find either the class or method
-    in the module
-"""
+import my_torch.torchio
 
 
-def plot_specgram(waveform):
-    spafe.utils.vis.show_features(waveform, 'title', 'y', 'x')
+def get_average_power(signal, use_buffer=False, show_graph=False):
+    """ get average power for a signal
 
-"""
+    Note: can use buffer to change between calculating power over whole signal or using a buffer
 
-find the power and normalise power of signals
+    Args:
+        signal: (tensor or ndarray) : time domain tensor of sound
+        use_buffer: (boolean) : determines if a buffer should be used or not
+        show_graph: (boolean) : draw a graph if true and buffer is true
 
-"""
+    Returns:
+        (int): average power over signal
+    """
 
-import numpy as np
-import logging
+    if torch.is_tensor(signal):
+        signal = signal.numpy()[0, :]
 
+    if use_buffer:
+        lx = 1000  # length
+        p = 500  # overlap
+        buf = buffer(signal, lx, p)
+        average_pow = []
+        for b in buf:
+            average_pow.append(np.sum(np.square(b)) / lx)
+        if show_graph:
+            plt.plot(average_pow)
+        return np.mean(average_pow)
+    else:
+        average_power = np.square(np.linalg.norm(signal, ord=2)) / len(signal)
+        return average_power
+
+
+def snr(signal, noise):
+    if len(signal) != len(noise):
+        print('error lengths diff')
+        return
+    if torch.is_tensor(signal):
+        length = signal.size(1)
+        signal_power = torch.square(torch.linalg.norm(signal, ord=2)) / length
+        noise_power = torch.square(torch.linalg.norm(noise, ord=2)) / length
+        return 10 * torch.log10(signal_power / noise_power)
+    else:
+        length = len(signal)
+        signal_power = np.square(np.linalg.norm(signal, ord=2)) / length
+        noise_power = np.square(np.linalg.norm(noise, ord=2)) / length
+    return 10 * np.log10(signal_power / noise_power)
+
+def snr_matlab(signal, noise):
+    if len(signal) != len(noise):
+        print('error lengths diff')
+        return
+    if torch.is_tensor(signal):
+        signal_rss = torch.linalg.norm(signal, ord=2)
+        noise_rss = torch.linalg.norm(noise, ord=2)
+        return 20 * torch.log10(signal_rss / noise_rss)
+    else:
+        signal_rss = np.square(np.linalg.norm(signal, ord=2))
+        noise_rss = np.square(np.linalg.norm(noise, ord=2))
+    return 10 * np.log10(signal_rss / noise_rss)
 
 def normalize(audio):
     std = np.round(np.std(audio)) * 6  # 97%
@@ -125,6 +187,7 @@ def buffer(x, n, p=0, opt=None):
     return result.T
 
 
+# remove this
 def periodic_power(x, lx, p):
     buf = buffer(x, lx, p)
     average_pow = []
