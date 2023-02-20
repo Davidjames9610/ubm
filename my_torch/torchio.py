@@ -166,7 +166,7 @@ def plot_waveform(waveform, sample_rate=config.SAMPLE_RATE, title="Waveform", xl
     plt.show(block=False)
 
 
-def plot_specgram(waveform, sample_rate, title="Spectrogram", xlim=None):
+def plot_specgram(waveform, sample_rate=config.SAMPLE_RATE, title="Spectrogram", xlim=None):
     waveform = waveform.numpy()
 
     num_channels, num_frames = waveform.shape

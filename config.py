@@ -10,3 +10,4 @@ N_FFT = 1024
 
 ads_pitch_tracking_db_mfcc = r'/Users/david/Documents/mastersCode/ubm/data/pitch_tracking_database' \
                              r'/ads_pitch_tracking_db_mfcc.pickle'
+noise_db = r'/Users/david/Documents/data/MUSAN/musan/noise/free-sound'

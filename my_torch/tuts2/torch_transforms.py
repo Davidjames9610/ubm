@@ -10,6 +10,8 @@ import torch
 import utils
 import warnings
 import my_torch.torchio as tio
+import torchaudio.functional as F
+import torchaudio.transforms as T
 
 
 class ComposeTransform:
@@ -44,11 +46,23 @@ class FileToTensor:
     def __call__(self, file):
         sox_effects = [
             ['remix', '1'],  # convert to mono
-            ['rate', str(self.sample_rate)],  # resample
+            ['rate', str(self.sample_rate)],  # resample # TODO check if this low pass filters first
         ]
         transformed_audio, _ = torchaudio.sox_effects.apply_effects_file(file, sox_effects, normalize=True)
         return transformed_audio
 
+class FileToTensorLPF:
+    def __init__(self, sample_rate=config.SAMPLING_RATE, resampling_method="kaiser_window"):
+        self.sample_rate = sample_rate
+        self.resampling_method = resampling_method
+
+    def __call__(self, file):
+        sox_effects = [
+            ['remix', '1'],  # convert to mono
+        ]
+        transformed_audio, original_sample_rate = torchaudio.sox_effects.apply_effects_file(file, sox_effects, normalize=True)
+        transformed_audio = F.resample(transformed_audio, original_sample_rate, self.sample_rate, resampling_method=self.resampling_method)
+        return transformed_audio
 
 class NormalizeSox:
     def __init__(self, sample_rate=config.SAMPLING_RATE):
@@ -123,10 +137,6 @@ class SileroVad:
             return audio_data
 
 
-# add gaussian white noise
-
-# need to play around with inheritance here
-
 class AddGaussianWhiteNoise:
 
     """
@@ -164,63 +174,131 @@ class AddGaussianWhiteNoise:
 # [3] add noise from file name
 # [4] add noise random noise from list
 
-class AddNoiseFromFile:
-    def __init__(self, snr_db, noise=None, noise_file_index=None, average_signal_power=None, sample_rate=config.SAMPLE_RATE):
+class AddNoiseFile:
+    def __init__(self, snr_db, average_signal_power=None, sample_rate=config.SAMPLE_RATE, noise_data=None):
         self.sample_rate = sample_rate
         self.snr_db = snr_db
-        self.noise_file_index = noise_file_index
         self.average_signal_power = average_signal_power
-        self.noise_files = r'/Users/david/Documents/data/MUSAN/musan/noise/free-sound'
+        self.noise_data = noise_data
+        # possibly used
+        self.noise_files = config.noise_db
         self.noise_files_list = list(pathlib.Path(self.noise_files).glob('**/*.wav'))
 
-        if not os.path.exists(self.noise_files):
-            raise IOError(f'Noise directory `{self.noise_files}` does not exist')
+    def get_noise_list(self):
+        return self.noise_files_list
 
-        if self.noise_file_index is None:
-            self.noise_file_index = random.randint(0, len(self.noise_files_list))
+    def create_combined_signal(self):
+        snr = np.power(10, self.snr_db / 10)
+        noise_target_power = self.average_signal_power / snr
+        noise_power = utils.get_average_power(self.noise_data)
+        scale = noise_target_power / noise_power
+        noise_data = self.noise_data * np.sqrt(scale)
+        return utils.get_average_power(noise_data), noise_target_power
+        # noise = torch.tensor(np.random.normal(0, np.sqrt(noise_power), audio_data.size(1))[np.newaxis, ...])
+        # if not np.isclose(utils.snr_matlab(audio_data, noise), self.snr_db, atol=0.5):
+        #     warnings.warn('target snr db not met!')
+        # return audio_data + noise
 
-        noise_file_path = self.noise_files_list[self.noise_file_index]
+class AddNoiseFromFile(AddNoiseFile):
+    def __init__(self, snr_db,  noise_dir, average_signal_power=None, sample_rate=config.SAMPLE_RATE, noise_data=None):
+        super().__init__(snr_db, average_signal_power, sample_rate, noise_data)
+        self.noise_dir = noise_dir
+        self.noise_data = self.noise_file_to_audio(noise_dir)
 
-        compose_transform = ComposeTransform([
-            FileToTensor(),
-            NormalizeSox(),
-        ])
-
-        self.transformed_noise = compose_transform(noise_file_path)
-
-    def plot_play_noise(self):
-        tio.plot_waveform(self.transformed_noise)
-        tio.play_audio(self.transformed_noise)
+    def noise_file_to_audio(self, noise_dir):
+        effects = [
+            ['remix', '1'],  # convert to mono
+            ['rate', str(self.sample_rate)],  # resample
+            ['gain', '-n']  # normalises to 0dB
+        ]
+        noise, _ = torchaudio.sox_effects.apply_effects_file(noise_dir, effects, normalize=True)
+        return noise
 
     def __call__(self, audio_data):
-        if self.noise_file_index is None:
-            self.noise_file_index = random.randint(0, len(self.noise_files_list))
+        if self.average_signal_power is None:
+            self.average_signal_power = utils.get_average_power(audio_data)
 
-        noise_file_path = self.noise_files_list[self.noise_file_index]
+        print(self.create_combined_signal())
 
-        print(noise_file_path)
+        # snr = np.power(10, self.snr_db / 10)
+        # noise_power = self.average_signal_power / snr
+        # noise = torch.tensor(np.random.normal(0, np.sqrt(noise_power), audio_data.size(1))[np.newaxis, ...])
+        # if not np.isclose(utils.snr_matlab(audio_data, noise), self.snr_db, atol=0.5):
+        #     warnings.warn('target snr db not met!')
+        # return audio_data + noise
 
-        # effects = [
-        #     ['remix', '1'],  # convert to mono
-        #     ['rate', str(self.sample_rate)],  # resample
-        # ]
-        # noise, _ = torchaudio.sox_effects.apply_effects_file(noise_file_path, effects, normalize=True)
-        # audio_length = audio_data.shape[-1]
-        # noise_length = noise.shape[-1]
-        # # add in noise randomly if longer, or if shorter then zero pad end
-        # if noise_length > audio_length:
-        #     offset = random.randint(0, noise_length - audio_length)
-        #     noise = noise[..., offset:offset + audio_length]
-        # elif noise_length < audio_length:
-        #     noise = torch.cat([noise, torch.zeros((noise.shape[0], audio_length - noise_length))], dim=-1)
-        #
-        # snr_db = random.randint(self.min_snr_db, self.max_snr_db)
-        # snr = math.exp(snr_db / 10)
-        # audio_power = audio_data.norm(p=2)
-        # noise_power = noise.norm(p=2)
-        # scale = snr * noise_power / audio_power
-        #
-        # return (scale * audio_data + noise) / 2
+# class AddNoiseFromFile:
+#     def __init__(self, snr_db, noise=None, noise_file_index=None, average_signal_power=None, sample_rate=config.SAMPLE_RATE):
+#         self.sample_rate = sample_rate
+#         self.snr_db = snr_db
+#         self.noise_file_index = noise_file_index
+#         self.average_signal_power = average_signal_power
+#         self.noise_files = r'/Users/david/Documents/data/MUSAN/musan/noise/free-sound'
+#         self.noise_files_list = list(pathlib.Path(self.noise_files).glob('**/*.wav'))
+#
+#         if not os.path.exists(self.noise_files):
+#             raise IOError(f'Noise directory `{self.noise_files}` does not exist')
+#
+#         if self.noise_file_index is None:
+#             self.noise_file_index = random.randint(0, len(self.noise_files_list))
+#
+#         noise_file_path = self.noise_files_list[self.noise_file_index]
+#
+#         compose_transform = ComposeTransform([
+#             FileToTensor(),
+#             NormalizeSox(),
+#         ])
+#
+#         self.transformed_noise = compose_transform(noise_file_path)
+#
+#     def plot_play_noise(self):
+#         tio.plot_waveform(self.transformed_noise)
+#         tio.play_audio(self.transformed_noise)
+#
+#     def __call__(self, audio_data):
+#         if self.noise_file_index is None:
+#             self.noise_file_index = random.randint(0, len(self.noise_files_list))
+#
+#         noise_file_path = self.noise_files_list[self.noise_file_index]
+#
+#         print(noise_file_path)
+#
+#         # effects = [
+#         #     ['remix', '1'],  # convert to mono
+#         #     ['rate', str(self.sample_rate)],  # resample
+#         # ]
+#         # noise, _ = torchaudio.sox_effects.apply_effects_file(noise_file_path, effects, normalize=True)
+#         # audio_length = audio_data.shape[-1]
+#         # noise_length = noise.shape[-1]
+#         # # add in noise randomly if longer, or if shorter then zero pad end
+#         # if noise_length > audio_length:
+#         #     offset = random.randint(0, noise_length - audio_length)
+#         #     noise = noise[..., offset:offset + audio_length]
+#         # elif noise_length < audio_length:
+#         #     noise = torch.cat([noise, torch.zeros((noise.shape[0], audio_length - noise_length))], dim=-1)
+#         #
+#         # snr_db = random.randint(self.min_snr_db, self.max_snr_db)
+#         # snr = math.exp(snr_db / 10)
+#         # audio_power = audio_data.norm(p=2)
+#         # noise_power = noise.norm(p=2)
+#         # scale = snr * noise_power / audio_power
+#         # audio_power / noise_power = snr / scale
+#         #
+#         # return (scale * audio_data + noise) / 2
+
+class AddReverb:
+    def __init__(self, sample_rate=config.SAMPLE_RATE):
+        self.sample_rate = sample_rate
+
+    def __call__(self, audio_data):
+        sox_effects = [
+            ["reverb", "-w"],
+            ['remix', '1'],
+        ]
+        transformed_audio, _ = torchaudio.sox_effects.apply_effects_tensor(
+            tensor=audio_data, sample_rate=self.sample_rate, effects=sox_effects)
+        return transformed_audio
+
 
 class RandomClip:
     def __init__(self, sample_rate, clip_length):
