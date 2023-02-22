@@ -23,3 +23,6 @@ class ClassifierBase:
 
     def set_normalisation(self, ads: AudioDatastore):
         self.fe_method.set_normalisation(ads, self.process_method)
+
+
+

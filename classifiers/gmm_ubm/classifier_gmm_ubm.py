@@ -1,6 +1,6 @@
 from sklearn.mixture import GaussianMixture, _gaussian_mixture
 
-from audio_datastore.audio_datastore import AudioDatastore, subset, filter
+from audio_datastore.audio_datastore import AudioDatastore, subset, filter_out
 from classifiers.classifier_base import ClassifierBase
 from feature_extraction.fe_base import FeatureExtractorBase
 import numpy as np
@@ -20,7 +20,7 @@ class ClassifierGMMUBM(ClassifierBase):
     def __str__(self):
         return f"ClassifierGMMUBM"
 
-    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase, ):
+    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase):
         super().__init__(fe_method, process_method)
         self.ubm: GaussianMixture | None = None
         self.enrolled_gmms: {GaussianMixture} = {}

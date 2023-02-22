@@ -51,6 +51,7 @@ class FileToTensor:
         transformed_audio, _ = torchaudio.sox_effects.apply_effects_file(file, sox_effects, normalize=True)
         return transformed_audio
 
+
 class FileToTensorLPF:
     def __init__(self, sample_rate=config.SAMPLING_RATE, resampling_method="kaiser_window"):
         self.sample_rate = sample_rate
@@ -60,9 +61,12 @@ class FileToTensorLPF:
         sox_effects = [
             ['remix', '1'],  # convert to mono
         ]
-        transformed_audio, original_sample_rate = torchaudio.sox_effects.apply_effects_file(file, sox_effects, normalize=True)
-        transformed_audio = F.resample(transformed_audio, original_sample_rate, self.sample_rate, resampling_method=self.resampling_method)
+        transformed_audio, original_sample_rate = torchaudio.sox_effects.apply_effects_file(file, sox_effects,
+                                                                                            normalize=True)
+        transformed_audio = F.resample(transformed_audio, original_sample_rate, self.sample_rate,
+                                       resampling_method=self.resampling_method)
         return transformed_audio
+
 
 class NormalizeSox:
     def __init__(self, sample_rate=config.SAMPLING_RATE):
@@ -102,6 +106,7 @@ class SileroVad:
         target snr_db
 
     """
+
     def __init__(self, sample_rate=config.SAMPLING_RATE):
         model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
                                       model='silero_vad',
@@ -130,7 +135,7 @@ class SileroVad:
             start = speech_timestamps[i]['start']
             end = speech_timestamps[i]['end']
             segments.append(audio_data[:, start: end])
-        segments_flattened = torch.cat(segments)
+        segments_flattened = torch.cat(segments, axis=1)
         if len(segments_flattened) > 0:
             return segments_flattened
         else:
@@ -138,7 +143,6 @@ class SileroVad:
 
 
 class AddGaussianWhiteNoise:
-
     """
     Used to add white noise to a signal to reach a given snr_db
     If the average_signal_power is not given then calculate it
@@ -168,18 +172,21 @@ class AddGaussianWhiteNoise:
             warnings.warn('target snr db not met!')
         return audio_data + noise
 
+
 # TODO: this needs to be updated - create a base add-noise class and then expand to:
-# [1] add gaussian noise
+# [1] add gaussian noise - done
 # [2] add noise from audio
 # [3] add noise from file name
 # [4] add noise random noise from list
 
 class AddNoiseFile:
-    def __init__(self, snr_db, average_signal_power=None, sample_rate=config.SAMPLE_RATE, noise_data=None):
+    def __init__(self, snr_db, average_signal_power=None, sample_rate=config.SAMPLE_RATE, noise_data=None,
+                 verbose=False):
         self.sample_rate = sample_rate
         self.snr_db = snr_db
         self.average_signal_power = average_signal_power
         self.noise_data = noise_data
+        self.verbose = verbose
         # possibly used
         self.noise_files = config.noise_db
         self.noise_files_list = list(pathlib.Path(self.noise_files).glob('**/*.wav'))
@@ -187,21 +194,11 @@ class AddNoiseFile:
     def get_noise_list(self):
         return self.noise_files_list
 
-    def create_combined_signal(self):
-        snr = np.power(10, self.snr_db / 10)
-        noise_target_power = self.average_signal_power / snr
-        noise_power = utils.get_average_power(self.noise_data)
-        scale = noise_target_power / noise_power
-        noise_data = self.noise_data * np.sqrt(scale)
-        return utils.get_average_power(noise_data), noise_target_power
-        # noise = torch.tensor(np.random.normal(0, np.sqrt(noise_power), audio_data.size(1))[np.newaxis, ...])
-        # if not np.isclose(utils.snr_matlab(audio_data, noise), self.snr_db, atol=0.5):
-        #     warnings.warn('target snr db not met!')
-        # return audio_data + noise
 
 class AddNoiseFromFile(AddNoiseFile):
-    def __init__(self, snr_db,  noise_dir, average_signal_power=None, sample_rate=config.SAMPLE_RATE, noise_data=None):
-        super().__init__(snr_db, average_signal_power, sample_rate, noise_data)
+    def __init__(self, snr_db, noise_dir, average_signal_power=None, sample_rate=config.SAMPLE_RATE, noise_data=None,
+                 verbose=False):
+        super().__init__(snr_db, average_signal_power, sample_rate, noise_data, verbose)
         self.noise_dir = noise_dir
         self.noise_data = self.noise_file_to_audio(noise_dir)
 
@@ -216,16 +213,34 @@ class AddNoiseFromFile(AddNoiseFile):
 
     def __call__(self, audio_data):
         if self.average_signal_power is None:
+            if self.verbose:
+                print('calculating average_signal_power')
             self.average_signal_power = utils.get_average_power(audio_data)
 
-        print(self.create_combined_signal())
+        noise_data_trimmed = None
 
-        # snr = np.power(10, self.snr_db / 10)
-        # noise_power = self.average_signal_power / snr
-        # noise = torch.tensor(np.random.normal(0, np.sqrt(noise_power), audio_data.size(1))[np.newaxis, ...])
-        # if not np.isclose(utils.snr_matlab(audio_data, noise), self.snr_db, atol=0.5):
-        #     warnings.warn('target snr db not met!')
-        # return audio_data + noise
+        audio_length = audio_data.shape[-1]
+        noise_length = self.noise_data.shape[-1]
+        # add in noise randomly if longer, or if shorter than zero pad end
+        if noise_length > audio_length:
+            offset = random.randint(0, noise_length - audio_length)
+            noise_data_trimmed = self.noise_data[..., offset:offset + audio_length]
+        elif noise_length < audio_length:
+            warnings.warn('noise_length < audio_length')
+            noise_data_trimmed = torch.cat(
+                [self.noise_data, torch.zeros((self.noise_data.shape[0], audio_length - noise_length))], dim=-1)
+
+        snr = np.power(10, self.snr_db / 10)
+        noise_target_power = self.average_signal_power / snr
+        noise_power = utils.get_average_power(noise_data_trimmed)
+        scale = noise_target_power / noise_power
+        noise_data_trimmed = noise_data_trimmed * np.sqrt(scale)  # sqrt since power
+        if self.verbose:
+            print('target snr and calculated snr: ', self.snr_db, utils.snr_matlab(audio_data, noise_data_trimmed).item())
+        if not np.isclose(utils.snr_matlab(audio_data, noise_data_trimmed), self.snr_db, atol=0.5):
+            warnings.warn('target snr db not met!')
+        return audio_data + noise_data_trimmed
+
 
 # class AddNoiseFromFile:
 #     def __init__(self, snr_db, noise=None, noise_file_index=None, average_signal_power=None, sample_rate=config.SAMPLE_RATE):
