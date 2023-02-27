@@ -1,13 +1,15 @@
 from audio_datastore.audio_datastore import AudioDatastore
 from feature_extraction.fe_base import FeatureExtractorBase
 from processing.process_method_base import ProcessMethodBase
+from my_torch.tuts2.torch_transforms import ComposeTransform
 
 
 class ClassifierBase:
 
-    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase):
-        self.process_method = process_method
-        self.fe_method: FeatureExtractorBase = fe_method
+    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, info=None):
+        self.train_process = train_process
+        self.test_process = test_process
+        self.info = info
 
     def __str__(self):
         return f"Base Classifier"
@@ -20,9 +22,3 @@ class ClassifierBase:
 
     def test(self, ads_test: AudioDatastore):
         pass
-
-    def set_normalisation(self, ads: AudioDatastore):
-        self.fe_method.set_normalisation(ads, self.process_method)
-
-
-

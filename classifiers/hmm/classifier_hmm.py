@@ -5,10 +5,11 @@ from sklearn.mixture import GaussianMixture
 from audio_datastore.audio_datastore import AudioDatastore
 from classifiers.classifier_base import ClassifierBase
 from feature_extraction.fe_base import FeatureExtractorBase
+from my_torch.tuts2.torch_transforms import ComposeTransform
 from processing.process_method_base import ProcessMethodBase
 from hmmlearn.hmm import GMMHMM, GaussianHMM
 import numpy as np
-from audio_datastore.audio_datastore import AudioDatastore, subset, filter
+from audio_datastore.audio_datastore import AudioDatastore, subset
 
 
 class ClassifierHMM(ClassifierBase):
@@ -16,10 +17,10 @@ class ClassifierHMM(ClassifierBase):
     def __str__(self):
         return f"ClassifierHMM"
 
-    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase,
+    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, info=None,
                  n_mix=2, n_components=4
                  ):
-        super().__init__(fe_method, process_method)
+        super().__init__(train_process, test_process, info)
         self.hmms: {GaussianHMM} = {}
         self.n_mix = n_mix
         self.n_components = n_components
@@ -31,34 +32,36 @@ class ClassifierHMM(ClassifierBase):
         self.speakers = speakers
         self.hmms = {}
 
-        for i in range(len(speakers)):
-            ads_train_subset = subset(ads_train, speakers[i])
-            speaker_features = []
-            for file in ads_train_subset.files:
-                signal = self.process_method.pre_process(file)
-                speaker_features.append(self.fe_method.extract_and_normalize_feature(signal))
-            speaker_features_flattened = np.array([item for sublist in speaker_features for item in sublist])
+        for s in range(len(speakers)):
+            ads_train_subset = subset(ads_train, speakers[s])
+            features = []
+            for i in range(len(ads_train_subset.labels)):
+                feature = self.train_process(ads_train_subset[i])
+                features.append(feature)
+            features_flattened = np.array([item for sublist in features for item in sublist])
             hmm = GaussianHMM(n_components=self.n_components)
-            hmm.fit(speaker_features_flattened)
-            self.hmms[speakers[i]] = hmm
+            hmm.fit(features_flattened)
+            self.hmms[speakers[s]] = hmm
 
     def enroll(self, ads_enroll: AudioDatastore):
         pass
 
-    def test(self, ads_test: AudioDatastore):
-        print('testing for ', self.fe_method.__str__())
+    # todo add in other tests as well ! also need to continue the development of the
+    # transforms and use them
 
+    def test_all(self, ads_test: AudioDatastore, thresholds=None):
+        self.test_confusion_matrix(ads_test)
+
+    def test_confusion_matrix(self, ads_test: AudioDatastore):
         # confusion matrix
         scores = []
         labels = ads_test.labels
-        for i in range(len(ads_test.files)):
-            signal = self.process_method.pre_process(ads_test.files[i])
-            signal = self.process_method.post_process(signal)
-            speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
+        for i in range(len(ads_test.labels)):
+            feature = self.test_process(ads_test[i])
             speakers_scores = []
             for s in range(len(self.speakers)):
                 speaker_hmm: GaussianHMM = self.hmms[self.speakers[s]]
-                likelihood_hmm = speaker_hmm.score(speaker_feature)
+                likelihood_hmm = speaker_hmm.score(feature)
                 speakers_scores.append(likelihood_hmm)
 
             scores.append(self.speakers[np.argmax(speakers_scores)])

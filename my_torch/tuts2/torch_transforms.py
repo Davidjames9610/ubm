@@ -16,12 +16,20 @@ import torchaudio.transforms as T
 
 class ComposeTransform:
     def __init__(self, transforms):
+
         self.transforms = transforms
 
     def __call__(self, audio_data):
         for t in self.transforms:
             audio_data = t(audio_data)
         return audio_data
+
+class TensorToNumpy:
+    def __init__(self):
+        pass
+
+    def __call__(self, audio):
+        return audio.numpy().T
 
 
 # class ComposeTransform:
@@ -67,6 +75,36 @@ class FileToTensorLPF:
                                        resampling_method=self.resampling_method)
         return transformed_audio
 
+
+class ProcessMethodCheck:
+    """
+    Process Methods receive tensors
+    ...
+    """
+    def __init__(self):
+        pass
+
+    def __call__(self, audio_data):
+        if torch.is_tensor(audio_data):
+            return audio_data
+        else:
+            return torch.from_numpy(audio_data.T)
+
+#
+class FeMethodCheck:
+    """
+    Fe Methods receive numpy arrays
+    ...
+
+    """
+    def __init__(self):
+        pass
+
+    def __call__(self, audio_data):
+        if torch.is_tensor(audio_data):
+            return audio_data.numpy().T
+        else:
+            return audio_data
 
 class NormalizeSox:
     def __init__(self, sample_rate=config.SAMPLING_RATE):
@@ -168,8 +206,9 @@ class AddGaussianWhiteNoise:
         snr = np.power(10, self.snr_db / 10)
         noise_power = self.average_signal_power / snr
         noise = torch.tensor(np.random.normal(0, np.sqrt(noise_power), audio_data.size(1))[np.newaxis, ...])
-        if not np.isclose(utils.snr_matlab(audio_data, noise), self.snr_db, atol=0.5):
-            warnings.warn('target snr db not met!')
+        # if not np.isclose(utils.snr_matlab(audio_data, noise), self.snr_db, atol=0.5):
+        #     diff = utils.snr_matlab(audio_data, noise) - self.snr_db
+        #     print('target snr db not met!', diff.item())
         return audio_data + noise
 
 

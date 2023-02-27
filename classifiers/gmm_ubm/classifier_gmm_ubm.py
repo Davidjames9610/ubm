@@ -7,9 +7,12 @@ import numpy as np
 from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from my_torch.tuts2.torch_transforms import ComposeTransform
 from typing import List, Optional, Tuple
 import torch
 import torchaudio
+
+from my_torch.tuts2.torch_transforms import ComposeTransform
 from processing.process_method_base import ProcessMethodBase
 
 eps = np.finfo(np.float64).eps
@@ -20,8 +23,8 @@ class ClassifierGMMUBM(ClassifierBase):
     def __str__(self):
         return f"ClassifierGMMUBM"
 
-    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase):
-        super().__init__(fe_method, process_method)
+    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, info=None):
+        super().__init__(train_process, test_process, info)
         self.ubm: GaussianMixture | None = None
         self.enrolled_gmms: {GaussianMixture} = {}
         self.num_features = None
@@ -30,17 +33,16 @@ class ClassifierGMMUBM(ClassifierBase):
         self.speakers = None
         self.test_results = {}
 
-    def train(self, ads_train: AudioDatastore):
-        train_features = []
-        for i in range(len(ads_train.files)):
-            signal = self.process_method.pre_process(ads_train.files[i])
-            train_feature = self.fe_method.extract_and_normalize_feature(signal)
-            train_features.append(train_feature)
+    def train(self, ads: AudioDatastore):
+        features = []
+        for i in range(len(ads.labels)):
+            feature = self.train_process(ads[i])
+            features.append(feature)
         ubm = GaussianMixture(n_components=self.num_components, covariance_type='diag')
-        train_features_flattened = np.array([item for sublist in train_features for item in sublist])
-        ubm.fit(train_features_flattened)
+        features_flattened = np.array([item for sublist in features for item in sublist])
+        ubm.fit(features_flattened)
         self.ubm = ubm
-        self.num_features = train_features[0].shape[1]
+        self.num_features = features[0].shape[1]
 
     def enroll(self, ads_enroll: AudioDatastore):
         self.speakers = np.unique(ads_enroll.labels)
@@ -48,17 +50,16 @@ class ClassifierGMMUBM(ClassifierBase):
         speakers = np.unique(ads_enroll.labels)
         self.enrolled_gmms = {}
 
-        for i in range(len(speakers)):
-            ads_train_subset = subset(ads_enroll, speakers[i])
+        for y in range(len(speakers)):
+            ads_enroll_subset = subset(ads_enroll, speakers[y])
             N = np.zeros((1, self.num_components))
             F = np.zeros((self.num_features, self.num_components))
             S = np.zeros((self.num_features, self.num_components))
 
-            for file in ads_train_subset.files:
-                signal = self.process_method.pre_process(file)
-                speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
-                if len(speaker_feature) > 0:
-                    n, f, s, l = self.__helper_expectation(speaker_feature, self.ubm)
+            for i in range(len(ads_enroll_subset.labels)):
+                enroll_feature = self.train_process(ads_enroll_subset[i])
+                if len(enroll_feature) > 0:
+                    n, f, s, l = self.__helper_expectation(enroll_feature, self.ubm)
                     N = N + n
                     F = F + f
                     S = S + s
@@ -86,26 +87,19 @@ class ClassifierGMMUBM(ClassifierBase):
             weights = np.squeeze(weights / np.sum(weights))
             gmm.weights_ = weights
 
-            self.enrolled_gmms[speakers[i]] = gmm
+            self.enrolled_gmms[speakers[y]] = gmm
 
     def test_all(self, ads_test: AudioDatastore, thresholds=None):
-        print('testing for:', self.fe_method.__str__(), self.__str__())
-        if self.process_method.snr_db:
-            print('snr_db:', self.process_method.snr_db)
-            print('reverb', self.process_method.reverb)
         self.test_confusion_matrix(ads_test)
-        # self.test_frr(ads_test, thresholds)
-        # self.test_far(ads_test, thresholds)
-        # self.test_det(thresholds)
-
+        self.test_frr(ads_test, thresholds)
+        self.test_far(ads_test, thresholds)
+        self.test_det(thresholds)
 
     def test_confusion_matrix(self, ads_test: AudioDatastore):
         scores = []
         labels = ads_test.labels
-        for i in range(len(ads_test.files)):
-            signal = self.process_method.pre_process(ads_test.files[i])
-            signal = self.process_method.post_process(signal)
-            speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
+        for i in range(len(ads_test.labels)):
+            speaker_feature = self.test_process(ads_test[i])
             speakers_scores = []
             for s in range(len(self.speakers)):
                 speaker_gmm = self.enrolled_gmms[self.speakers[s]]
@@ -126,17 +120,14 @@ class ClassifierGMMUBM(ClassifierBase):
 
     def test_frr(self, ads_test, thresholds=None):
         llr = []
-        for i in range(len(self.speakers)):
-            cur_speaker = self.speakers[i]
+        for s in range(len(self.speakers)):
+            cur_speaker = self.speakers[s]
             local_gmm = self.enrolled_gmms[cur_speaker]
             ads_test_subset = subset(ads_test, cur_speaker)
-            llr_per_speaker = np.zeros(len(ads_test_subset.files))
+            llr_per_speaker = np.zeros(len(ads_test_subset.labels))
 
-            for y in range(len(ads_test_subset.files)):
-                file = ads_test_subset.files[y]
-                signal = self.process_method.pre_process(file)
-                signal = self.process_method.post_process(signal)
-                speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
+            for i in range(len(ads_test_subset.labels)):
+                speaker_feature = self.test_process(ads_test_subset[i])
 
                 log_likelihood = local_gmm._estimate_weighted_log_prob(speaker_feature)
                 likelihood_speaker = logsumexp(log_likelihood, axis=1)
@@ -144,12 +135,12 @@ class ClassifierGMMUBM(ClassifierBase):
                 log_likelihood = self.ubm._estimate_weighted_log_prob(speaker_feature)
                 likelihood_ubm = logsumexp(log_likelihood, axis=1)
 
-                llr_per_speaker[y] = np.mean(self.running_mean(likelihood_speaker - likelihood_ubm, 3))
+                llr_per_speaker[i] = np.mean(self.running_mean(likelihood_speaker - likelihood_ubm, 3))
 
             llr.append(llr_per_speaker)
         llr_cat = np.concatenate(llr, axis=0)
 
-        self.test_results['frr'] = llr_cat
+
 
         if thresholds is None:
             thresholds = np.arange(-0.5, 2.5, 0.01)
@@ -160,24 +151,22 @@ class ClassifierGMMUBM(ClassifierBase):
         plt.plot(thresholds, frr * 100)
         plt.title('false rejection rate vs threshold')
         plt.show()
+        self.test_results['frr'] = frr
 
     def test_far(self, ads_test, thresholds=None):
 
         llr = []
 
-        for i in range(len(self.speakers)):
-            cur_speaker = self.speakers[i]
+        for s in range(len(self.speakers)):
+            cur_speaker = self.speakers[s]
             local_gmm = self.enrolled_gmms[cur_speaker]
-            filtered = self.speakers[i] != self.speakers
+            filtered = self.speakers[s] != self.speakers
             filtered_speakers = self.speakers[filtered]
             ads_test_subset = subset(ads_test, filtered_speakers)
-            llr_per_speaker = np.zeros(len(ads_test_subset.files))
+            llr_per_speaker = np.zeros(len(ads_test_subset.labels))
 
-            for y in range(len(ads_test_subset.files)):
-                file = ads_test_subset.files[y]
-                signal = self.process_method.pre_process(file)
-                signal = self.process_method.post_process(signal)
-                speaker_feature = self.fe_method.extract_and_normalize_feature(signal)
+            for i in range(len(ads_test_subset.labels)):
+                speaker_feature = self.test_process(ads_test_subset[i])
 
                 log_likelihood = local_gmm._estimate_weighted_log_prob(speaker_feature)
                 likelihood_speaker = logsumexp(log_likelihood, axis=1)
@@ -185,16 +174,13 @@ class ClassifierGMMUBM(ClassifierBase):
                 log_likelihood = self.ubm._estimate_weighted_log_prob(speaker_feature)
                 likelihood_ubm = logsumexp(log_likelihood, axis=1)
 
-                llr_per_speaker[y] = np.mean(self.running_mean(likelihood_speaker - likelihood_ubm, 3))
+                llr_per_speaker[i] = np.mean(self.running_mean(likelihood_speaker - likelihood_ubm, 3))
 
             llr.append(llr_per_speaker)
-
-        self.test_results['far'] = llr
 
         if thresholds is None:
             thresholds = np.arange(-0.5, 2.5, 0.01)
         llr_cat = np.concatenate(llr, axis=0)
-        thresholds = np.arange(-0.5, 2.5, 0.01)
         thresholds = np.expand_dims(thresholds, axis=1)
         ones = np.ones((1, len(llr_cat)))
         thresholds = thresholds * ones
@@ -202,6 +188,7 @@ class ClassifierGMMUBM(ClassifierBase):
         plt.plot(thresholds, far * 100)
         plt.title('false acceptance rate vs threshold')
         plt.show()
+        self.test_results['far'] = far
 
     def test_det(self, thresholds=None):
 
@@ -224,9 +211,11 @@ class ClassifierGMMUBM(ClassifierBase):
         EERThreshold = thresholds[idx]
         EER = np.mean([far[idx], frr[idx]])
 
-        plt.plot(thresholds, far)
-        plt.plot(thresholds, frr)
-        plt.plot(EERThreshold[0], EER, marker="o", markersize=10, markeredgecolor="red", markerfacecolor="red")
+        print(EERThreshold, EER*100)
+
+        plt.plot(thresholds, far*100)
+        plt.plot(thresholds, frr*100)
+        plt.plot(EERThreshold, EER*100, marker="o", markersize=8, markeredgecolor="red", markerfacecolor="red")
         plt.title('EER')
         plt.show()
 

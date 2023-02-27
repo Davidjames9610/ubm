@@ -1,9 +1,11 @@
 
 *.wav
-*.pickle
 *.aup3
 *.xml
 *.uml
 *.idea
 .idea
-.idea
+*.pickle
+*__pycache__
+*.DS_Store
+library/
