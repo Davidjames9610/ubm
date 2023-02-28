@@ -6,9 +6,12 @@ from my_torch.tuts2.torch_transforms import ComposeTransform
 
 class ClassifierBase:
 
-    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, info=None):
+    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform,
+                 fe_method: ComposeTransform, info=None,
+                 ):
         self.train_process = train_process
         self.test_process = test_process
+        self.fe_method = fe_method
         self.info = info
 
     def __str__(self):

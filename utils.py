@@ -38,7 +38,7 @@ def get_class(kls):
 
 import my_torch.torchio
 
-
+# TODO update this can
 def get_average_power(signal, use_buffer=False, show_graph=False):
     """ get average power for a signal
 

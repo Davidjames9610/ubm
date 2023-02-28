@@ -17,10 +17,10 @@ class ClassifierHMM(ClassifierBase):
     def __str__(self):
         return f"ClassifierHMM"
 
-    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, info=None,
+    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, fe_method: ComposeTransform, info=None,
                  n_mix=2, n_components=4
                  ):
-        super().__init__(train_process, test_process, info)
+        super().__init__(train_process, test_process, fe_method, info)
         self.hmms: {GaussianHMM} = {}
         self.n_mix = n_mix
         self.n_components = n_components
@@ -36,7 +36,7 @@ class ClassifierHMM(ClassifierBase):
             ads_train_subset = subset(ads_train, speakers[s])
             features = []
             for i in range(len(ads_train_subset.labels)):
-                feature = self.train_process(ads_train_subset[i])
+                feature = self.fe_method(self.train_process(ads_train_subset[i]))
                 features.append(feature)
             features_flattened = np.array([item for sublist in features for item in sublist])
             hmm = GaussianHMM(n_components=self.n_components)
@@ -57,17 +57,19 @@ class ClassifierHMM(ClassifierBase):
         scores = []
         labels = ads_test.labels
         for i in range(len(ads_test.labels)):
-            feature = self.test_process(ads_test[i])
+            feature = self.fe_method(self.test_process(ads_test[i]))
             speakers_scores = []
             for s in range(len(self.speakers)):
                 speaker_hmm: GaussianHMM = self.hmms[self.speakers[s]]
                 likelihood_hmm = speaker_hmm.score(feature)
                 speakers_scores.append(likelihood_hmm)
 
-            scores.append(self.speakers[np.argmax(speakers_scores)])
+            scores.append(self.speakers[np.argmax(speakers_scores)]) # can this be updated ?
 
         cm = confusion_matrix(np.array(scores), labels, labels=self.speakers, normalize='true')
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.speakers)
         disp.plot(cmap=plt.cm.Blues, values_format='g')
         plt.show()
+
+
 

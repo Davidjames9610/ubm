@@ -24,6 +24,11 @@ class FeatureExtractorBase:
     #     return norm_feature
 
     def __call__(self, signal):
+        # fe methods always take in numpy arrays
+        if torch.is_tensor(signal):
+            signal = signal.numpy().T
+        if signal.shape[-1] != 1:
+            print('input vector shape incorrect')
         feature = self.extract_feature(signal)
         if self.norm:
             feature = (feature - self.norm.means) / self.norm.std

@@ -23,8 +23,8 @@ class ClassifierGMMUBM(ClassifierBase):
     def __str__(self):
         return f"ClassifierGMMUBM"
 
-    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, info=None):
-        super().__init__(train_process, test_process, info)
+    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, fe_method: ComposeTransform, info=None):
+        super().__init__(train_process, test_process, fe_method, info)
         self.ubm: GaussianMixture | None = None
         self.enrolled_gmms: {GaussianMixture} = {}
         self.num_features = None
@@ -36,7 +36,8 @@ class ClassifierGMMUBM(ClassifierBase):
     def train(self, ads: AudioDatastore):
         features = []
         for i in range(len(ads.labels)):
-            feature = self.train_process(ads[i])
+            signal = self.train_process(ads[i])
+            feature = self.fe_method(signal)
             features.append(feature)
         ubm = GaussianMixture(n_components=self.num_components, covariance_type='diag')
         features_flattened = np.array([item for sublist in features for item in sublist])
@@ -57,7 +58,8 @@ class ClassifierGMMUBM(ClassifierBase):
             S = np.zeros((self.num_features, self.num_components))
 
             for i in range(len(ads_enroll_subset.labels)):
-                enroll_feature = self.train_process(ads_enroll_subset[i])
+                signal = self.train_process(ads_enroll_subset[i])
+                enroll_feature = self.fe_method(signal)
                 if len(enroll_feature) > 0:
                     n, f, s, l = self.__helper_expectation(enroll_feature, self.ubm)
                     N = N + n
@@ -99,7 +101,8 @@ class ClassifierGMMUBM(ClassifierBase):
         scores = []
         labels = ads_test.labels
         for i in range(len(ads_test.labels)):
-            speaker_feature = self.test_process(ads_test[i])
+            signal = self.test_process(ads_test[i])
+            speaker_feature = self.fe_method(signal)
             speakers_scores = []
             for s in range(len(self.speakers)):
                 speaker_gmm = self.enrolled_gmms[self.speakers[s]]
@@ -127,7 +130,8 @@ class ClassifierGMMUBM(ClassifierBase):
             llr_per_speaker = np.zeros(len(ads_test_subset.labels))
 
             for i in range(len(ads_test_subset.labels)):
-                speaker_feature = self.test_process(ads_test_subset[i])
+                signal = self.test_process(ads_test_subset[i])
+                speaker_feature = self.fe_method(signal)
 
                 log_likelihood = local_gmm._estimate_weighted_log_prob(speaker_feature)
                 likelihood_speaker = logsumexp(log_likelihood, axis=1)
@@ -166,7 +170,8 @@ class ClassifierGMMUBM(ClassifierBase):
             llr_per_speaker = np.zeros(len(ads_test_subset.labels))
 
             for i in range(len(ads_test_subset.labels)):
-                speaker_feature = self.test_process(ads_test_subset[i])
+                signal = self.test_process(ads_test_subset[i])
+                speaker_feature = self.fe_method(signal)
 
                 log_likelihood = local_gmm._estimate_weighted_log_prob(speaker_feature)
                 likelihood_speaker = logsumexp(log_likelihood, axis=1)

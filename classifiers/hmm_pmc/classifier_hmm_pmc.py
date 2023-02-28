@@ -1,34 +1,34 @@
-# DUPLICATE
 from hmmlearn import hmm
 from hmmlearn.hmm import GaussianHMM
 
 from audio_datastore.audio_datastore import AudioDatastore, subset
 from classifiers.hmm.classifier_hmm import ClassifierHMM
 from feature_extraction.fe_base import FeatureExtractorBase
+from my_torch.tuts2.torch_transforms import ComposeTransform
 from processing.process_method_base import ProcessMethodBase
 from classifiers.fhmm.helper_functions import *
 
+class ClassifierHMMPMC(ClassifierHMM):
 
-class ClassifierFHMM(ClassifierHMM):
-
-    def __init__(self, fe_method: FeatureExtractorBase, process_method: ProcessMethodBase,
-                 n_mix=2, n_components=4):
-        super().__init__(fe_method, process_method, n_mix, n_components)
+    def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, fe_method: ComposeTransform,
+                 info=None, n_mix=2, n_components=4, noise_average_power=0
+                 ):
+        super().__init__(train_process, test_process, fe_method, n_mix, n_components, info)
         self.n_components = 4
         self.noise_hmm: GaussianHMM | None = None
         self.hmms: {GaussianHMM} = {}
         self.speakers: None
         self.snr_noise = 1
+        self.noise_average_power = noise_average_power
 
     def __str__(self):
         return f"ClassifierFHMM"
 
     def train_noise_hmm(self):
-        noise_ap = self.process_method.noise_ap
-        noise_signal = np.random.normal(0, np.sqrt(noise_ap), 10000)
-        hmm = GaussianHMM(n_components=1)
-        noise_feature = self.fe_method.extract_feature(noise_signal)
-        hmm.fit(noise_feature)
+        noise_signal = np.random.normal(0, np.sqrt(self.noise_average_power), 10000)
+        noise_hmm = GaussianHMM(n_components=1)
+        noise_feature = self.fe_method(noise_signal)
+        noise_hmm.fit(noise_feature)
         self.noise_hmm = hmm
 
     def adapt_speaker_models(self):
@@ -112,7 +112,3 @@ class ClassifierFHMM(ClassifierHMM):
 
     def test(self, ads_test: AudioDatastore):
         super().test(ads_test)
-
-    # not sure if should normalize if mapping ?
-    def set_normalisation(self, ads: AudioDatastore):
-        super().set_normalisation(ads)
