@@ -28,7 +28,10 @@ class ClassifierHMMPMC(ClassifierHMM):
 
     def train_noise_hmm(self):
         # calculate noise power from snr
-        # log 10 (s/n) = snr / 10
+        # 10log10(s/n) = snr_db
+        # # ln x = y, e^y = x
+        # # log10 (s/n) = snr/10
+        # signal_average_power / np.power((snr_db / 10), 10)
         noise_average_power = self.signal_average_power / np.power(10, self.snr / 10)
         noise_signal = np.random.normal(0, np.sqrt(noise_average_power), 10000)
         noise_hmm = GaussianHMM(n_components=1)
