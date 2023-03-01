@@ -17,7 +17,6 @@ class ClassifierFHMM(ClassifierHMM):
         self.n_components = 4
         self.noise_hmm: GaussianHMM | None = None
         self.hmms: {GaussianHMM} = {}
-        self.speakers: None
         self.snr_noise = 1
 
     def __str__(self):

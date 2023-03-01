@@ -24,6 +24,14 @@ class ComposeTransform:
             audio_data = t(audio_data)
         return audio_data
 
+class ComposeProcessTransform(ComposeTransform):
+    def __init__(self, transforms):
+        all_transforms = [ProcessMethodCheck()]
+        for transform in transforms:
+            all_transforms.append(transform)
+        super().__init__(all_transforms)
+
+
 class TensorToNumpy:
     def __init__(self):
         pass

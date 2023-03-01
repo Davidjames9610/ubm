@@ -1,6 +1,8 @@
+import numpy as np
 from hmmlearn import hmm
 from hmmlearn.hmm import GaussianHMM
 
+import utils
 from audio_datastore.audio_datastore import AudioDatastore, subset
 from classifiers.hmm.classifier_hmm import ClassifierHMM
 from feature_extraction.fe_base import FeatureExtractorBase
@@ -11,25 +13,28 @@ from classifiers.fhmm.helper_functions import *
 class ClassifierHMMPMC(ClassifierHMM):
 
     def __init__(self, train_process: ComposeTransform, test_process: ComposeTransform, fe_method: ComposeTransform,
-                 info=None, n_mix=2, n_components=4, noise_average_power=0
+                 snr, signal_average_power, info=None, n_mix=2, n_components=4
                  ):
         super().__init__(train_process, test_process, fe_method, n_mix, n_components, info)
         self.n_components = 4
         self.noise_hmm: GaussianHMM | None = None
         self.hmms: {GaussianHMM} = {}
-        self.speakers: None
+        self.snr = snr
+        self.signal_average_power = signal_average_power
         self.snr_noise = 1
-        self.noise_average_power = noise_average_power
 
     def __str__(self):
         return f"ClassifierFHMM"
 
     def train_noise_hmm(self):
-        noise_signal = np.random.normal(0, np.sqrt(self.noise_average_power), 10000)
+        # calculate noise power from snr
+        # log 10 (s/n) = snr / 10
+        noise_average_power = self.signal_average_power / np.power(10, self.snr / 10)
+        noise_signal = np.random.normal(0, np.sqrt(noise_average_power), 10000)
         noise_hmm = GaussianHMM(n_components=1)
         noise_feature = self.fe_method(noise_signal)
         noise_hmm.fit(noise_feature)
-        self.noise_hmm = hmm
+        self.noise_hmm = noise_hmm
 
     def adapt_speaker_models(self):
         for key in self.hmms:
