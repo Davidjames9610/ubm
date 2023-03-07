@@ -46,7 +46,9 @@ class DNNHMM:
         self.hmm = hmm
         self.mlp = None
         self.sequences = None  # forced alignment
-        self.features = None
+
+
+
 
     def train_hmm(self, features):
         self.features = features
