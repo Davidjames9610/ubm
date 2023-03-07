@@ -10,6 +10,20 @@ from spafe.features.mfcc import *
 MFCC = 'spafe.features.mfcc.mfcc'
 GFCC = 'spafe.features.gfcc.gfcc'
 
+
+class FeatureExtractorLogMel(FeatureExtractorBase):
+    def __init__(self):
+        super().__init__()
+
+    def __str__(self):
+        return 'log mel spafe'
+
+    def extract_feature(self, sig):
+        features, _ = mel_spectrogram(sig=sig, fs=conf.SAMPLING_RATE, nfft=conf.N_FFT)
+        features_no_zero = zero_handling(features)
+        log_features = np.log(features_no_zero)
+        return log_features
+
 class FeatureExtractorMfcc(FeatureExtractorBase):
     def __init__(self):
         super().__init__()

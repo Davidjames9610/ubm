@@ -1,0 +1,12 @@
+
+import numpy as np
+
+eps = np.finfo(np.float64).eps
+SEQUENCE_LENGTH = 30
+BATCH_SIZE = 10
+SAMPLE_RATE = 16000
+LEARNING_RATE = 5e-5
+NUM_HIDDEN_UNITS = 16
+TOL = 0.00001
+NUM_EPOCHS = 50
+SHUFFLE_TRAINING = False
