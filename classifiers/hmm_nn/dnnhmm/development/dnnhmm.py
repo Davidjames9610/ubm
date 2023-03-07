@@ -2,14 +2,6 @@ import numpy as np
 import hmmlearn.hmm as hmmlearn
 from sklearn.neural_network import MLPClassifier
 
-
-# def train_hmm(data_list, base_hmm: hmmlearn.BaseHMM):
-#     lengths = []
-#     for n, i in enumerate(data_list):
-#         lengths.append(len(i))
-#     base_hmm.fit(np.concatenate(data_list), lengths)
-#     return base_hmm
-
 def elog(x):
     res = np.log(x, where=(x != 0))
     res[np.where(x == 0)] = -(10.0 ** 8)
@@ -42,21 +34,23 @@ def logSumExp(x, axis=None, keepdims=False):
 
 
 class DNNHMM:
-    def __init__(self, hmm: hmmlearn.BaseHMM):
-        self.hmm = hmm
+    def __init__(self, n_mix=2, n_components=4):
+        self.n_mix = n_mix
+        self.n_components = n_components
+        self.hmm = hmmlearn.GaussianHMM(n_components=n_components)
         self.mlp = None
-        self.sequences = None  # forced alignment
 
-
-
+    # features should not be concatenated
+    def fit(self, features):
+        self.train_hmm(features)
+        sequences = self.viterbi_hmm(features)
+        self.train_mlp(features, sequences)
 
     def train_hmm(self, features):
-        self.features = features
         lengths = []
         for n, i in enumerate(features):
             lengths.append(len(i))
         self.hmm.fit(np.concatenate(features), lengths)
-        self.sequences = self.viterbi_hmm(features)
 
     def viterbi_hmm(self, features):
         sequences = []
@@ -64,12 +58,12 @@ class DNNHMM:
             sequences.append(self.hmm.predict(feature))
         return sequences
 
-    def train_mlp(self):
+    def train_mlp(self, features, sequences):
 
         O = []
         S = []
 
-        for data_u, seq in zip(self.features, self.sequences):
+        for data_u, seq in zip(features, sequences):
             data_u_expanded = getExpandedData(data_u)
             O.append(data_u_expanded)
             S.append(seq)
@@ -149,7 +143,7 @@ class DNNHMM:
 
         return log_alpha
 
-    def loglike_mlp(self, data):
+    def score(self, data):
         T = data.shape[0]
         log_alpha_t = self.forward_mlp(data)[T - 1]
         ll = logSumExp(log_alpha_t)
