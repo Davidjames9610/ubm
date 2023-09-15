@@ -1,0 +1,11 @@
+
+Gaussian
+    tut 1 - VI, Gibbs (still to do)
+
+GMM
+    tut 1 - Sklearns GMM VI
+
+DP
+    from: https://github.com/tdhopper/notes-on-dirichlet-processes/blob/master/pages/2015-07-28-dirichlet-distribution-dirichlet-process.ipynb
+    1. Dirichlet Distribution / Dirichlet Process
+    2.
