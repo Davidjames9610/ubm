@@ -1,11 +1,14 @@
-import matplotlib.pyplot as plt
-import seaborn as sns; sns.set()
-from sklearn.mixture import GaussianMixture
+import seaborn as sns;
+from sklearn import mixture
+
+sns.set()
 import numpy as np
 from scipy.stats import  wishart, dirichlet, invwishart, multivariate_normal
 from sklearn.metrics.cluster import adjusted_rand_score as ari
+from sklearn.mixture._gaussian_mixture import _compute_precision_cholesky
+
 class GMMGibbsSampler():
-    def __init__(self, X, K, burn_in=5, iterations=50, **kwargs):
+    def __init__(self, X, K, burn_in=0, iterations=100, **kwargs):
         """
         [] input
         X = data n x d
@@ -41,6 +44,7 @@ class GMMGibbsSampler():
         self.pi = dirichlet.rvs(alpha=self.alpha0, size=1).flatten()
         Z_mat = np.random.multinomial(n=1, pvals=self.pi, size=self.N) # N x K 'one-hot vectors'
         _, self.Z = np.where(Z_mat == 1) # N x 1 component number
+        self.alpha0 = np.ones(K) * 0.1 / self.K  # small prior
 
         # sufficient stats
         self.nk = np.zeros(self.K, dtype=int)
@@ -64,11 +68,13 @@ class GMMGibbsSampler():
 
         # Hyper parameters
         # Mu
-        self.m0 = self.x_bar # K x D
+        self.m0 = np.copy(self.x_bar) # K x D
+        if np.isnan(self.m0).any():
+            print('nan')
         self.V0 = [np.eye(self.D) * 1000 for _ in range(K)] # K x D x D
         # Sigma
         self.S0 = diagsig # K x D x D
-        self.nu0 = self.K + 1  # 1 Degrees of freedom IW
+        self.nu0 = np.copy(self.K) + 1  # 1 Degrees of freedom IW
 
         self.mu_trace = []
         self.sigma_trace = []
@@ -82,17 +88,22 @@ class GMMGibbsSampler():
             self.gibbs_sweep()
 
             # save trace
-            if it < self.burn_in:
-                self.mu_trace.append(self.mu)
-                self.sigma_trace.append(self.sigma)
-                self.pi_trace.append(self.pi)
+            # if it > self.burn_in:
+            self.mu_trace.append(self.mu)
+            self.sigma_trace.append(self.sigma)
+            self.pi_trace.append(self.pi)
 
             # Calculate ARI
             if self.Z_true is not None:
                 self.ARI[it] = np.round(ari(self.Z_true, self.Z), 3)
-                print(f"ARI:{self.ARI[it]}")
+                # print(f"ARI:{self.ARI[it]}")
 
+        skl_gmm = mixture.GaussianMixture(n_components=self.K, covariance_type="full")
+        skl_gmm.means_, skl_gmm.covariances_, skl_gmm.weights_, skl_gmm.precisions_cholesky_ = self.mu, self.sigma, self.pi, _compute_precision_cholesky(self.sigma, "full")
+        skl_gmm.precisions_ = skl_gmm.covariances_** 2
+        skl_gmm.converged_ = True
         print('completed gibbs sampling')
+        return skl_gmm
 
     def get_model_likelihood(self):
         pass
@@ -107,7 +118,11 @@ class GMMGibbsSampler():
             term2 = np.dot(np.linalg.inv(self.V0[k]), self.m0[k])
             mk = (np.dot(Vk, term1 + term2))
             # sample mu
-            self.mu[k] = np.random.multivariate_normal(mean=mk, cov=Vk, size=1).flatten()
+            mu_k = np.random.multivariate_normal(mean=mk, cov=Vk, size=1).flatten()
+            if np.isnan(mu_k).any():
+                print('oh dear')
+            else:
+                self.mu[k] = mu_k
 
             # sigma
             dif = (self.X[self.Z == k] - self.mu[k])
@@ -131,13 +146,24 @@ class GMMGibbsSampler():
         # Sample z
         Z_mat = np.zeros((self.N, self.K))
         for n in range(self.N):
-            Z_mat[n] = np.random.multinomial(n=1, pvals=res[n], size=1).flatten()
+            try:
+                Z_mat[n] = np.random.multinomial(n=1, pvals=res[n], size=1).flatten()
+            except ValueError as e:
+                print(e)
         _, self.Z = np.where(Z_mat == 1)
 
         # [3] update ss
         for k in range(self.K):
             self.nk[k] = np.sum(self.Z == k)
-            self.x_bar[k] = np.mean(self.X[self.Z == k], axis=0)
+            # avoid zero assignments
+            if self.nk[k] > 0:
+                self.x_bar[k] = np.mean(self.X[self.Z == k], axis=0)
+            else:
+                # Reassign an empty component randomly
+                random_idx = np.random.randint(0, self.N)
+                self.Z[random_idx] = k
+                self.nk[k] = 1  # Increment the count
+                self.x_bar[k] = self.X[random_idx]
 
         return self.pi, self.mu, self.sigma
 
