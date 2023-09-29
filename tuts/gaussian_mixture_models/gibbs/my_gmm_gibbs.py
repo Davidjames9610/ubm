@@ -8,7 +8,7 @@ from sklearn.metrics.cluster import adjusted_rand_score as ari
 from sklearn.mixture._gaussian_mixture import _compute_precision_cholesky
 
 class GMMGibbsSampler():
-    def __init__(self, X, K, burn_in=0, iterations=100, **kwargs):
+    def __init__(self, X, K, burn_in=0, iterations=40, **kwargs):
         """
         [] input
         X = data n x d
@@ -80,8 +80,18 @@ class GMMGibbsSampler():
         self.sigma_trace = []
         self.pi_trace = []
         self.ARI = np.zeros((self.iterations))
+        self.likelihood_history = []
+
+    def has_converged(self, previous_likelihood, current_likelihood, tolerance):
+        # Calculate the relative change in likelihood
+        relative_change = np.abs((current_likelihood - previous_likelihood) / previous_likelihood)
+        return relative_change < tolerance
 
     def fit(self):
+        max_iterations = 100
+        convergence_threshold = 1e-5
+        self.likelihood_history = []
+
         self.ARI = np.zeros((self.iterations))
         print('starting gibbs sampling')
         for it in range(self.iterations):
@@ -98,6 +108,14 @@ class GMMGibbsSampler():
                 self.ARI[it] = np.round(ari(self.Z_true, self.Z), 3)
                 # print(f"ARI:{self.ARI[it]}")
 
+            # check likelihood and break if needed
+            current_likelihood = self.calculate_likelihood()
+            self.likelihood_history.append(current_likelihood)
+            # if it > 0:
+            #     if self.has_converged(likelihood_history[-1], current_likelihood, convergence_threshold):
+                    # print(f"Converged after {it} iterations.")
+                    # break
+
         skl_gmm = mixture.GaussianMixture(n_components=self.K, covariance_type="full")
         skl_gmm.means_, skl_gmm.covariances_, skl_gmm.weights_, skl_gmm.precisions_cholesky_ = self.mu, self.sigma, self.pi, _compute_precision_cholesky(self.sigma, "full")
         skl_gmm.precisions_ = skl_gmm.covariances_** 2
@@ -105,8 +123,15 @@ class GMMGibbsSampler():
         print('completed gibbs sampling')
         return skl_gmm
 
-    def get_model_likelihood(self):
-        pass
+    def calculate_likelihood(self):
+        likelihood = 0.0
+        for i in range(self.N):
+            point_likelihood = 0.0
+            for k in range(self.K):
+                component_likelihood = self.pi[k] * multivariate_normal.pdf(self.X[i], mean=self.mu[k], cov=self.sigma[k])
+                point_likelihood += component_likelihood
+            likelihood += np.log(point_likelihood)  # Use log likelihood to avoid numerical underflow
+        return likelihood
 
     # one sweep of git sampler, return variables sampled
     def gibbs_sweep(self):
