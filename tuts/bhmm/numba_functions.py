@@ -174,7 +174,7 @@ def sample_states_numba_mv(beta: np.ndarray, initial_dist: np.ndarray, observati
     for i in range(1, num_obs):
         # equation (7) in /literature/Bayesian\ Model.pdf
         log_probabilities = np.log(A[int(new_state_path[i-1]), :]) + \
-                            np.array([multivariate_normal.logpdf(observations[0], mean=mean, cov=cov) for mean, cov in zip(mu, sigma)]) + \
+                            np.array([multivariate_normal.logpdf(observations[i], mean=mean, cov=cov) for mean, cov in zip(mu, sigma)]) + \
                             beta[i]
 
         probabilities = compute_probabilities(log_probabilities)
