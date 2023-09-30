@@ -33,9 +33,12 @@ def backward_robust_mv(A, means, covariances, observations):
         for i in range(num_states):
             logbeta = 10000  # this will act as a hacky substitute for None because numba can't take in None
             for j in range(num_states):
-                logbeta = elnsum(logbeta, elnproduct(eln(A[j, i]),
-                                                     elnproduct(multivariate_normal.logpdf(observations[t+1], mean=means[j], cov=covariances[j]),
-                                                                beta[t+1, j])))
+                try:
+                    logbeta = elnsum(logbeta, elnproduct(eln(A[j, i]),
+                                                         elnproduct(multivariate_normal.logpdf(observations[t+1], mean=means[j], cov=covariances[j]),
+                                                                    beta[t+1, j])))
+                except Exception as e:
+                    print(f"An error occurred while logbeta: {e}")
             beta[t, i] = logbeta
 
     return beta
