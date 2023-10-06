@@ -156,7 +156,7 @@ class GMMGibbsSampler():
             # sample sigma
             self.sigma[k] = invwishart.rvs(size=1, df=nuk, scale=Sk)
 
-        # sample pi
+        # [2] sample pi
         alpha_k = self.nk + self.alpha0
         self.pi = dirichlet.rvs(size=1, alpha=alpha_k).flatten()
 

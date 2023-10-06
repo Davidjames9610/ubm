@@ -39,8 +39,6 @@ class BayesianHMM():
         self.D = X.shape[1] # dimension of data
         self.Z_true = Z_true
 
-
-
         # init z matrix randomly along with pie and A
         self.alpha0 = np.ones(K) * 1000/self.K # Uniform prior
         self.pi = dirichlet.rvs(alpha=self.alpha0, size=1).flatten()
@@ -189,21 +187,23 @@ class BayesianHMM():
         # [1] sample params using assignments
         for k in range(self.K):
             # mu
-            Vk = (np.linalg.inv(np.linalg.inv(self.V0[k]) + self.nk[k] * np.linalg.inv(self.sigma[k])))
-            term1 = np.dot(np.linalg.inv(self.sigma[k]), self.nk[k] * self.x_bar[k])
-            term2 = np.dot(np.linalg.inv(self.V0[k]), self.m0[k])
-            mk = (np.dot(Vk, term1 + term2))
-            # sample mu
-            mu_k = np.random.multivariate_normal(mean=mk, cov=Vk, size=1).flatten()
+            # if count is 0 then sample from prior / don't sample ?
+            if self.nk[k] > 0:
+                Vk = (np.linalg.inv(np.linalg.inv(self.V0[k]) + self.nk[k] * np.linalg.inv(self.sigma[k])))
+                term1 = np.dot(np.linalg.inv(self.sigma[k]), self.nk[k] * self.x_bar[k])
+                term2 = np.dot(np.linalg.inv(self.V0[k]), self.m0[k])
+                mk = (np.dot(Vk, term1 + term2))
+                # sample mu
+                mu_k = np.random.multivariate_normal(mean=mk, cov=Vk, size=1).flatten()
 
-            self.mu[k] = mu_k
+                self.mu[k] = mu_k
 
-            # sigma
-            dif = (self.X[self.Z == k] - self.mu[k])
-            Sk = (self.S0[k] + (np.dot(dif.T, dif)))
-            nuk = self.nu0 + self.nk[k]
-            # sample sigma
-            self.sigma[k] = invwishart.rvs(size=1, df=nuk, scale=Sk)
+                # sigma
+                dif = (self.X[self.Z == k] - self.mu[k])
+                Sk = (self.S0[k] + (np.dot(dif.T, dif)))
+                nuk = self.nu0 + self.nk[k]
+                # sample sigma
+                self.sigma[k] = invwishart.rvs(size=1, df=nuk, scale=Sk)
 
         # sample pi
         alpha_k = self.nk + self.alpha0
@@ -218,15 +218,17 @@ class BayesianHMM():
         self.Z = self.sample_states()
 
         # [3] update ss
-        self.handle_empty_components()
+        # self.handle_empty_components()
         # update ss
         for k in range(self.K):
             self.nk[k] = np.sum(self.Z == k)
-            if self.nk[k] == 0:
-                self.nk[k] = 1
-            self.x_bar[k] = np.mean(self.X[self.Z == k], axis=0)
-        if np.any(self.nk == 0):
-            print('zero count')
+            # if self.nk[k] == 0:
+            #     self.nk[k] = 1
+            if self.nk[k] > 0:
+                self.x_bar[k] = np.mean(self.X[self.Z == k], axis=0)
+        # if np.any(self.nk == 0):
+        #     print('zero count')
+
         return self.pi, self.mu, self.sigma
 
     def delete_component(self, component_to_delete):

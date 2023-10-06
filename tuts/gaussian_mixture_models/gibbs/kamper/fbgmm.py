@@ -143,7 +143,11 @@ class FBGMM(object):
                 # (24.23) in Murphy, p. 842
                 log_prob_z[:self.components.K] += self.components.log_post_pred(i)
                 # Empty (unactive) components
+                if np.any(log_prob_z > 0):
+                    print('greater than 0')
                 log_prob_z[self.components.K:] += self.components.log_prior(i)
+
+
                 prob_z = np.exp(log_prob_z - logsumexp(log_prob_z))
 
                 # Sample the new component assignment for `X[i]`
