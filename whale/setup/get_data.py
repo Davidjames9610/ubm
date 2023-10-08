@@ -1,11 +1,11 @@
 import random
 from typing import List
 from scipy.io import wavfile
-from annotations import Annotations
+from whale.setup.annotations import Annotations
 import decimal
 import math
 import librosa
-import constants as const
+import whale.setup.constants as const
 
 
 def round_half_up(number):

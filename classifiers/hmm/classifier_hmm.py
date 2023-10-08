@@ -70,6 +70,3 @@ class ClassifierHMM(ClassifierBase):
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.speakers)
         disp.plot(cmap=plt.cm.Blues, values_format='g')
         plt.show()
-
-
-

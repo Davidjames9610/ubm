@@ -3,17 +3,16 @@ Author: Herman Kamper
 Date: 2014, 2023
 """
 
-from numpy.linalg import cholesky, det, inv, slogdet
 from scipy.special import gammaln, logsumexp
 import logging
 import math
 import numpy as np
 import time
 
-from bayes_gmm.gaussian_components import GaussianComponents
-from bayes_gmm.gaussian_components_diag import GaussianComponentsDiag
-from bayes_gmm.gaussian_components_fixedvar import GaussianComponentsFixedVar
-from bayes_gmm import utils
+from whale import GaussianComponents
+from whale import GaussianComponentsDiag
+from whale import GaussianComponentsFixedVar
+from whale import utils
 
 logger = logging.getLogger(__name__)
 
