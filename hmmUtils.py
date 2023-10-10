@@ -87,47 +87,6 @@ def normalise_t_matrix(decimal_n, hmm_to_normalise):
     print(np.abs(hmm_to_normalise.transmat_).sum(axis=1))
 
 
-def doViterbiAlgorithm(features, hmm01):
-    # returns the most likely state sequence given observed sequence x
-    # using the Viterbi algorithm
-
-    T = len(features)
-    a_matrix01, m01, means01, covars01, pi01 = getParams(hmm01)
-
-    # make the emission matrix B
-    logB = np.zeros((m01, T))
-    for j in range(m01):
-        for t in range(T):
-            p = mvn.logpdf(features[t], means01[j], covars01[j])
-            logB[j, t] += p
-
-    # perform Viterbi
-    delta = np.zeros((T, m01))
-    psi = np.zeros((T, m01))
-
-    pi01 = pi01 + 1e-10
-    pi01 /= pi01.sum()
-
-    # populate first row of delta
-    for x in range(m01):
-        delta[0, x] = np.log(pi01[x]) + logB[x, 0]
-
-    for t in range(1, T):
-        for x in range(m01):
-            ao1_row = a_matrix01[:, x]
-            next_delta = delta[t - 1] + np.log(ao1_row)
-            delta[t, x] = np.max(next_delta) + logB[x, t]
-            psi[t, x] = np.argmax(next_delta)
-
-    # backtrack
-    states = np.zeros(T, dtype=np.int32)
-    states[T - 1] = np.argmax(delta[T - 1])
-    for t in range(T - 2, -1, -1):
-        states[t] = psi[t + 1, states[t + 1]]
-    log_prob = delta[-1, states[-1]]
-    return states, log_prob
-
-
 def getMandC(j,k, m1, m2):
     mean_j = m1.means_[j]
     mean_k = m2.means_[k]
@@ -179,6 +138,46 @@ def kronecker_list(list_A):
     for i in range(len(list_A)-1):
         result=np.kron(result,list_A[i+1])
     return result
+
+def doViterbiAlgorithm(features, hmm01):
+    # returns the most likely state sequence given observed sequence x
+    # using the Viterbi algorithm
+
+    T = len(features)
+    a_matrix01, m01, means01, covars01, pi01 = getParams(hmm01)
+
+    # make the emission matrix B
+    logB = np.zeros((m01, T))
+    for j in range(m01):
+        for t in range(T):
+            p = mvn.logpdf(features[t], means01[j], covars01[j])
+            logB[j, t] += p
+
+    # perform Viterbi
+    delta = np.zeros((T, m01))
+    psi = np.zeros((T, m01))
+
+    pi01 = pi01 + 1e-10
+    pi01 /= pi01.sum()
+
+    # populate first row of delta
+    for x in range(m01):
+        delta[0, x] = np.log(pi01[x]) + logB[x, 0]
+
+    for t in range(1, T):
+        for x in range(m01):
+            ao1_row = a_matrix01[:, x]
+            next_delta = delta[t - 1] + np.log(ao1_row)
+            delta[t, x] = np.max(next_delta) + logB[x, t]
+            psi[t, x] = np.argmax(next_delta)
+
+    # backtrack
+    states = np.zeros(T, dtype=np.int32)
+    states[T - 1] = np.argmax(delta[T - 1])
+    for t in range(T - 2, -1, -1):
+        states[t] = psi[t + 1, states[t + 1]]
+    log_prob = delta[-1, states[-1]]
+    return states, log_prob
 
 def doViterbiAlgorithmParallel(features, hmm01, hmm02):
     # returns the most likely state sequence given observed sequence x for fhmm of hmm01 and hmm02
@@ -277,6 +276,69 @@ def combineTwoHmmsSimple(hmm01: hmm.GaussianHMM, hmm02: hmm.GaussianHMM):
     start_comb = normalize_matrix(np.append(start_01, start_02))
 
     return {'means_': means_comb, 'transmat_': transmat_comb, 'covars_': covars_comb, 'n_components': total_n, 'startprob_': start_comb}
+
+
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Mar 10 16:19:42 2022
+
+@author: David
+"""
+
+
+import numpy as np
+
+class inputParams():
+    def __init__(self, means, stateSequence):
+        self.m = means
+        self.ss = stateSequence
+
+class weinerFilter():
+    """
+    Weiner filter to separate audio
+
+    Attributes
+    ----------
+    m1 : features x dimension matrix
+        means of hmm object 01
+
+    m2 : features x dimension matrix
+        means of hmm object 02
+
+    """
+    # def __init__(self, d):
+    #     self.d = d
+
+    """
+    features: length x dimension of features
+    ss01: state sequence for hmm01
+    ss02: state sequence for hmm02
+    """
+    @staticmethod
+    def getHardMask(features, model01: inputParams, model02: inputParams):
+        frames = features.shape[0]
+        mask01 = np.zeros(features.shape)
+        mask02 = np.zeros(features.shape)
+        for i in range(frames):
+            mask01_means = model01.m[model01.ss[i]]
+            mask02_means = model02.m[model02.ss[i]]
+            mask_test = (mask01_means > mask02_means).astype(int)
+            mask01[i, :] = mask_test
+            mask02[i, :] = ((mask_test - 1) * -1)
+        return mask01, mask02
+
+    @staticmethod
+    def getSoftMask(features, model01: inputParams, model02: inputParams):
+        frames = features.shape[0]
+        mask01 = np.zeros(features.shape)
+        mask02 = np.zeros(features.shape)
+        for i in range(frames):
+            mask01_means = model01.m[int(model01.ss[i])]
+            mask02_means = model02.m[int(model02.ss[i])]
+            mask01[i, :] = mask01_means / (mask02_means + mask01_means)
+            mask02[i, :] = mask02_means / (mask02_means + mask01_means)
+        return mask01, mask02
+
 
 def debug():
 
