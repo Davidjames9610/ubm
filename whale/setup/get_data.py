@@ -33,12 +33,13 @@ class GetDataBase:
                  annotations: Annotations,
                  window_length,
                  frame_step,
-                 samples=True
+                 samples=True,
+                 sr=const.SAMPLING_RATE
                  ):
         self.location_of_wav_file = location_of_wav_file
         self.location_of_annotations = location_of_annotations
 
-        audio, fs = librosa.load(location_of_wav_file, sr=const.SAMPLING_RATE)
+        audio, fs = librosa.load(location_of_wav_file, sr=sr)
         # fs, audio = wavfile.read(location_of_wav_file)
         self.fs = fs
         self.audio = audio

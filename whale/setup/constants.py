@@ -22,3 +22,6 @@ BOWHEAD_LABELS_B = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/bow
 HUMPBACK_WAV_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/940302-1222.wav'
 HUMPBACK_LABEL_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/940302-1222.txt'
 HUMPBACK_LABEL_A_NOISE = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/940302-1222-noise.txt'
+
+SWOOPS_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/swoops.txt'
+LONG_SWOOPS_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/long-swoops.txt'
