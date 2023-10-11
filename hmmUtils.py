@@ -333,8 +333,8 @@ class weinerFilter():
         mask01 = np.zeros(features.shape)
         mask02 = np.zeros(features.shape)
         for i in range(frames):
-            mask01_means = model01.m[int(model01.ss[i])]
-            mask02_means = model02.m[int(model02.ss[i])]
+            mask01_means = np.exp(model01.m[int(model01.ss[i])])
+            mask02_means = np.exp(model02.m[int(model02.ss[i])])
             mask01[i, :] = mask01_means / (mask02_means + mask01_means)
             mask02[i, :] = mask02_means / (mask02_means + mask01_means)
         return mask01, mask02
