@@ -1,0 +1,16 @@
+
+deliverables:
+
+// un-mixing
+[1] show correct states identified in gaussian noise
+[2] show un-mixing in state of added real noise
+[3] show un-mixing of two humpback whale calls
+
+// noise-handling
+[1] create fhmm object which can be combined with a normal hmm
+    this might require mergin or removing states in the fhmm which are similar to noise states, kl-divergence ?
+
+    fhmm object
+    input = hmm_whale, hmm_noise
+    self.viterbi-parallel,
+

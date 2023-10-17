@@ -328,15 +328,15 @@ class weinerFilter():
         return mask01, mask02
 
     @staticmethod
-    def getSoftMask(features, model01: inputParams, model02: inputParams):
+    def getSoftMask(features, model01: inputParams, model02: inputParams, alpha=0):
         frames = features.shape[0]
         mask01 = np.zeros(features.shape)
         mask02 = np.zeros(features.shape)
         for i in range(frames):
             mask01_means = np.exp(model01.m[int(model01.ss[i])])
             mask02_means = np.exp(model02.m[int(model02.ss[i])])
-            mask01[i, :] = mask01_means / (mask02_means + mask01_means)
-            mask02[i, :] = mask02_means / (mask02_means + mask01_means)
+            mask01[i, :] = mask01_means / ((mask02_means * alpha) + mask01_means)
+            mask02[i, :] = mask02_means / (mask02_means + (mask01_means * alpha))
         return mask01, mask02
 
 
