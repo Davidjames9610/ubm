@@ -49,7 +49,7 @@ class DecodeCombineBase:
         return map_states
 
     def __calculate_a_matrix(self):
-
+        noise_states = self.models[-1].n_components
         a = np.zeros((self.total_states, self.total_states))
         x, y = 0, 0
         for i in range(self.n_models):
@@ -57,12 +57,14 @@ class DecodeCombineBase:
             states = cur_model.n_components
             a[x:x + states, y: y + states] = cur_model.transmat_
             if y + states < self.total_states:
-                a[x + states - 1, y + states] = 1
+                a[self.total_states - 1, x] = 1
+                a[x + states - 1, self.total_states - noise_states] = 1
+        #     if y + states < self.total_states:
+        #         a[x + states - 1, y + states] = 1
             x += states
             y += states
-        a[self.total_states - 1, 0] = 1
+        # a[self.total_states - 1, 0] = 1
         a = normalise_a_matrix(a)
-
         return a
 
     def __calculate_pie_matrix(self):
@@ -105,7 +107,7 @@ class DecodeCombineGaussian(DecodeCombineBase):
         for z in range(len(states)):
             labels[z] = self.map_states[states[z]]
 
-        return states, np.array(labels), log_prob
+        return states, np.array(labels, dtype=int), log_prob
 
 def normalise_a_matrix(a_matrix, decimal_n=0.0001):
     rows = a_matrix.shape[0]

@@ -99,8 +99,9 @@ def snr_matlab(signal, noise):
         noise_rss = np.square(np.linalg.norm(noise, ord=2))
     return 10 * np.log10(signal_rss / noise_rss)
 
-def normalize(audio):
-    std = np.round(np.std(audio)) * 6  # 97%
+def normalize(audio, ):
+    audio = np.where(audio == 0, audio + 0.001, audio)
+    std = (np.round(np.std(audio) * 1000) / 1000) * 6  # 97%
     new_audio = audio / std
     if np.mean(new_audio) > 0.01:
         raise logging.warning('mean is large')
