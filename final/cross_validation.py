@@ -4,6 +4,7 @@ from sklearn.model_selection import RepeatedKFold
 random_state = 12883823
 rkf = RepeatedKFold(n_splits=4, n_repeats=1, random_state=random_state)
 from sklearn.model_selection import train_test_split
+import numpy as np
 
 TRAIN_DATA = 'train_data'
 TRAIN_LABEL = 'train_label'
@@ -22,7 +23,10 @@ def split_data_for_cross_validation(data, labels, n_splits, test_ratio=0.2):
     Returns
     data_train, label_train, data_val, label_val, X_test, y_test
     """
-    X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=test_ratio, random_state=42) # 20 % of data held out for final testing
+    if test_ratio > 0:
+        X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=test_ratio, random_state=42) # 20 % of data held out for final testing
+    else:
+        X_train, y_train, X_test, y_test = data, labels, [], []
     random_state = None # 12883823
     rkf = RepeatedKFold(n_splits=n_splits, n_repeats=1, random_state=random_state)
 
@@ -33,10 +37,10 @@ def split_data_for_cross_validation(data, labels, n_splits, test_ratio=0.2):
 
     for train_indices, validate_indices in rkf.split(X_train):
         data_train.append([X_train[i] for i in train_indices])
-        label_train.append([y_train[i] for i in train_indices])
+        label_train.append(np.array([y_train[i] for i in train_indices]))
 
         data_val.append([X_train[i] for i in validate_indices])
-        label_val.append([y_train[i] for i in validate_indices])
+        label_val.append(np.array([y_train[i] for i in validate_indices]))
 
     return {
         TRAIN_DATA: data_train,
@@ -44,5 +48,5 @@ def split_data_for_cross_validation(data, labels, n_splits, test_ratio=0.2):
         VAL_DATA: data_val,
         VAL_LABEL: label_val,
         TEST_DATA: X_test,
-        TEST_LABEL: y_test
+        TEST_LABEL: np.array(y_test)
     }

@@ -78,6 +78,8 @@ class DecodeCombineBase:
 
         return pie
 
+
+
     def __calculate_combined_emission_matrix(self, data):
         pass
 
@@ -87,12 +89,47 @@ class DecodeCombineBase:
 class DecodeCombineGaussian(DecodeCombineBase):
     def __init__(self, array_of_hmms: [GaussianHMM]):
         super().__init__(array_of_hmms)
+        means = self.__calculate_mean_matrix()
+        covars = self.__calculate_covar_matrix()
+        equiv_hmm = GaussianHMM(self.total_states, 'full')
+        equiv_hmm.n_features = array_of_hmms[0].n_features
+        equiv_hmm.covars_ = covars # np.array([np.diag(i) for i in covars])
+        equiv_hmm.means_ = means
+        equiv_hmm.startprob_ = self.pie
+        equiv_hmm.transmat_ = self.a
+        self.hmm = equiv_hmm
 
     def __calculate_combined_emission_matrix(self, data):
         log_bs = []
         for z in range(self.n_models):
             log_bs.append(calculate_emission_matrix(data, self.models[z]))
         return np.concatenate(log_bs, axis=0)
+
+    def __calculate_mean_matrix(self):
+        means = []
+        for z in range(self.n_models):
+            means.append(self.models[z].means_)
+
+        means = np.concatenate(means)
+        return means
+
+    def __calculate_covar_matrix(self):
+        covars = []
+        for z in range(self.n_models):
+            covars.append(self.models[z].covars_)
+        covars = np.concatenate(covars)
+        return covars
+
+    def decode_hmmlearn(self, data):
+        print('decoding using hmmlearn')
+        total_t = len(data)
+        log_prob, ss = self.hmm.decode(data)
+
+        labels = np.zeros(total_t)
+        for z in range(len(ss)):
+            labels[z] = self.map_states[ss[z]]
+
+        return ss, np.array(labels, dtype=int), log_prob
 
     def decode(self, data):
         total_t = len(data)

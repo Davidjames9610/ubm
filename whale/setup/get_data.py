@@ -1,11 +1,13 @@
 import random
 from typing import List
 from scipy.io import wavfile
-from whale.setup.annotations import Annotations
+from whale.setup.annotations import Annotations, AnnotationsAudacity, Annotation
 import decimal
 import math
 import librosa
 import whale.setup.constants as const
+import pandas as pd
+import numpy as np
 
 
 def round_half_up(number):
@@ -94,3 +96,36 @@ class GetDataBase:
         randomised_features = self.spliced_features[:]
         random.shuffle(randomised_features)
         return randomised_features[:train_index], randomised_features[train_index:]
+
+class GetDataSimple:
+    def __init__(self,
+                 location_of_wav_file,
+                 location_of_annotations,
+                 fs,
+                 file_to_audio,
+                 ):
+        self.location_of_wav_file = location_of_wav_file
+        self.location_of_annotations = location_of_annotations
+        audio, fs = file_to_audio(location_of_wav_file, fs)
+        self.audio = audio
+        self.fs = fs
+        self.annotations = self.set_annotations(location_of_annotations, fs)
+
+    def __str__(self):
+        return f"getData"
+
+    def set_annotations(self, labels, fs):
+        df = pd.read_csv(labels, encoding='UTF-8', sep='\t', names=['start', 'end', ''])
+
+        start = df.start.to_numpy()
+        end = df.end.to_numpy()
+        annotation_list = np.column_stack((start, end))
+
+        annotations = []
+        for annot in annotation_list:
+            start_ms = annot[0] * 1000
+            end_ms = annot[1] * 1000
+            start_samples = int((start_ms / 1000) * fs)
+            end_samples = int((end_ms / 1000) * fs)
+            annotations.append(Annotation(start_samples, end_samples, start_ms, end_ms))
+        return annotations
