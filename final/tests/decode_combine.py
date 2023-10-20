@@ -1,7 +1,7 @@
 """
 class for combining x amount of hmms into a larger model,
-at the moment only works for two, change a matrix calculation if needed.
-
+put noise model at the end, pretty mich just stacks the matrices, but for T we add states to and
+from the noise model and re-normalize,
 """
 
 # from hmm import myHmm

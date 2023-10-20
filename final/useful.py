@@ -1,6 +1,7 @@
 import librosa
 import torchaudio
 from hmmlearn.hmm import GaussianHMM
+from matplotlib import pyplot as plt
 from spafe.utils import vis
 import numpy as np
 
@@ -153,7 +154,7 @@ def perf_measure(y_actual, y_hat):
 
     return return_metrics
 
-import final.models.decode_combine as dc
+
 class SampleHolder:
     def __init__(self, samples, sample_labels, features=None, feature_labels=None):
         if feature_labels is None:
@@ -178,3 +179,86 @@ class SampleHolder:
         self.log_prob = output.log_prob
 
 
+## plot spectogram with annotations
+
+def find_label_changes(labels):
+    changes = []
+    changes.append((0, labels[0]))
+    for i in range(1, len(labels)):
+        if labels[i] != labels[i - 1]:
+            changes.append((i, labels[i]))
+    return changes
+
+def plot_spectrogram(features, true_labels, pred_labels, label_type, label_abr):
+
+    times = np.arange(features.shape[0])
+    frequencies = np.arange(features.shape[1])
+    true_changes = find_label_changes(true_labels)
+
+    pred_changes = find_label_changes(pred_labels)
+
+    for index, label in true_changes:
+        t = plt.text(times[index + 8], frequencies[-7], label_abr[label], color='black', fontsize=10, verticalalignment='bottom')
+        t.set_bbox(dict(facecolor='white', alpha=0.8, edgecolor='red', linewidth=0))
+        plt.vlines(times[index], ymin=frequencies.max() / 2, ymax=frequencies.max(), color='black', linestyles='dashed', linewidth=1)
+
+    for index, label in pred_changes:
+        t = plt.text(times[index + 8], frequencies[3], label_abr[label], color='red', fontsize=10, verticalalignment='bottom')
+        t.set_bbox(dict(facecolor='white', alpha=0.8, edgecolor='red', linewidth=0))
+        plt.vlines(times[index], ymin=frequencies.min(), ymax=frequencies.max() / 2, color='red', linestyles='solid', linewidth=2)
+
+    plt.pcolormesh(features.T)
+    plt.ylabel('F bin')
+    plt.xlabel('T bin')
+    legend_labels = [label_abr[label] + ' - ' + label_type[label].title() for label in label_type]
+    plt.legend(legend_labels, loc='upper right', facecolor='white', framealpha=1, handlelength=0)
+    plt.colorbar(label='Intensity [dB]')
+    plt.title('Annotated Spectrogram')
+    plt.show()
+
+def smooth_labels(labels, window_size=50, step_size=10, diff_size=20):
+
+    smoothy_labels = labels.copy()
+    arg_max = []
+    arg_max_index = []
+
+    for start in range(0, len(labels) - window_size + 1, step_size):
+        end = start + window_size
+        window = labels[start:end]
+
+        unique_elements, counts = np.unique(window, return_counts=True)
+        max_count_index = np.argmax(counts)
+        dominant_label = unique_elements[max_count_index]
+        arg_max.append(dominant_label)
+        arg_max_index.append(start)
+
+    changes = []
+    changes_index = []
+    for i in range(1, len(labels)):
+        if labels[i] != labels[i - 1]:
+            changes.append(labels[i])
+            changes_index.append(i)
+
+    fwd = changes[2]
+    curr = changes[1]
+    prev = changes[0]
+    for i in range(2, len(changes)):
+        fwd = changes[i]
+        curr = changes[i - 1]
+        prev = changes[i - 2]
+        index_curr = changes_index[i - 1]
+        index_fwd = changes_index[i]
+        index_prev = changes_index[i - 2]
+        diff = index_fwd - index_curr
+        # two cases, if quick switch back to original state then just set state to backwards
+        if prev != curr:
+            if diff < diff_size and prev == fwd:
+                smoothy_labels[index_curr: index_fwd] = np.ones(diff) * prev
+                changes[i - 1] = prev
+            elif diff < diff_size and prev != fwd and curr != fwd:
+                arg_max_index_cur = np.argmin(np.abs(np.array(arg_max_index) - index_curr))
+                arg_max_index_fwd = np.argmin(np.abs(np.array(arg_max_index) - index_fwd))
+                if (arg_max[arg_max_index_cur] == arg_max[arg_max_index_fwd]):
+                    smoothy_labels[index_curr: index_fwd] = np.ones(diff) * fwd
+                    changes[i - 1] = fwd
+    return smoothy_labels
