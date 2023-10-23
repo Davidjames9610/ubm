@@ -11,3 +11,6 @@
 library/
 *.svg
 *.pdf
+*.pkl
+*.png
+
