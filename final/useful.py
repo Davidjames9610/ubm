@@ -203,7 +203,11 @@ def plot_spectrogram(features, true_labels, pred_labels, label_type, label_abr):
         plt.vlines(times[index], ymin=frequencies.max() / 2, ymax=frequencies.max(), color='black', linestyles='dashed', linewidth=1)
 
     for index, label in pred_changes:
-        t = plt.text(times[index + 8], frequencies[3], label_abr[label], color='red', fontsize=10, verticalalignment='bottom')
+        if(index + 8 < len(times)):
+            t = plt.text(times[index + 8], frequencies[3], label_abr[label], color='red', fontsize=10, verticalalignment='bottom')
+        else:
+            t = plt.text(times[index], frequencies[3], label_abr[label], color='red', fontsize=10,
+                         verticalalignment='bottom')
         t.set_bbox(dict(facecolor='white', alpha=0.8, edgecolor='red', linewidth=0))
         plt.vlines(times[index], ymin=frequencies.min(), ymax=frequencies.max() / 2, color='red', linestyles='solid', linewidth=2)
 
