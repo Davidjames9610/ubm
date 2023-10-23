@@ -272,6 +272,12 @@ class HDPHMMWL():
         beta_vec = dirichlet.rvs(prob_vec, size=1)[0]
         self.beta = beta_vec
 
+    @staticmethod
+    def add_tiny_amount(matrix, tiny_amount=1e-6):
+        # Add tiny_amount to elements less than or equal to 0
+        matrix = np.where(matrix <= 0, matrix + tiny_amount, matrix)
+        return matrix
+
     def sample_A(self):
         A = np.zeros((self.K,self.K))
         for k in range(self.K):
@@ -279,11 +285,14 @@ class HDPHMMWL():
             prob_vec[k] += self.kappa0
             prob_vec[prob_vec<0.01] = 0.01
             A[k] = dirichlet.rvs(prob_vec, size=1)[0]
-        self.A = A
+        A = self.add_tiny_amount(A)
+        self.A = A / np.sum(A, axis=1)
 
         prob_vec = (self.alpha0*self.beta)+self.n_ft
         prob_vec[prob_vec<0.01] = 0.01
-        self.pi = dirichlet.rvs(prob_vec, size=1)[0]
+        pi = dirichlet.rvs(prob_vec, size=1)[0]
+        pi = self.add_tiny_amount(pi)
+        self.pi = pi / np.sum(pi)
 
     def sample_theta(self):
         # [1] sample params using assignments
