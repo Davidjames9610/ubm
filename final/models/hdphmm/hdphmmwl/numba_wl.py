@@ -37,8 +37,27 @@ def logpdf(x, mean, cov):
 
 
 # @jit(nopython=True)
-def sample_states_numba_mv(beta: np.ndarray, initial_dist: np.ndarray, observations: np.ndarray,
-                           mu: np.ndarray, sigma: np.ndarray, A: np.ndarray, num_obs: int) -> np.ndarray:
+def sample_states_likelihood(beta: np.ndarray, initial_dist: np.ndarray, A: np.ndarray, num_obs: int, likelihood: np.ndarray) -> np.ndarray:
+    """
+    numba version of function to sample from state distribution
+    """
+    new_state_path = np.empty(num_obs)
+
+    log_probabilities = np.log(initial_dist) + likelihood[0] + beta[0]
+    probabilities = compute_probabilities(log_probabilities)
+
+    new_state_path[0] = multinomial(probabilities)
+
+    for i in range(1, num_obs):
+        log_probabilities = np.log(A[int(new_state_path[i - 1]), :]) + likelihood[i] + beta[i]
+        probabilities = compute_probabilities(log_probabilities)
+        new_state_path[i] = multinomial(probabilities)
+    return new_state_path
+
+
+# @jit(nopython=True)
+def sample_states_numba(beta: np.ndarray, initial_dist: np.ndarray, observations: np.ndarray,
+                        mu: np.ndarray, sigma: np.ndarray, A: np.ndarray, num_obs: int) -> np.ndarray:
     """
     numba version of function to sample from state distribution
 
@@ -53,7 +72,10 @@ def sample_states_numba_mv(beta: np.ndarray, initial_dist: np.ndarray, observati
     """
 
     # equation (6) in /literature/Bayesian\ Model.pdf
-    log_probabilities = np.log(initial_dist) + np.array([logpdf(observations[0], mean=mean, cov=np.diag(np.diag(cov))) for mean, cov in zip(mu, sigma)]) + beta[0]
+    log_probabilities = np.log(initial_dist) + \
+                        np.array([multivariate_normal.logpdf(observations[0], mean=mean, cov=cov) for mean, cov in zip(mu, sigma)]) + \
+                        beta[0]
+
     probabilities = compute_probabilities(log_probabilities)
 
     # construct new np.array to hold the sampled state path
@@ -63,22 +85,28 @@ def sample_states_numba_mv(beta: np.ndarray, initial_dist: np.ndarray, observati
 
     for i in range(1, num_obs):
         # equation (7) in /literature/Bayesian\ Model.pdf
-        log_probabilities = np.log(A[int(new_state_path[i - 1]), :]) + np.array([logpdf(observations[i], mean=mean, cov=np.diag(np.diag(cov))) for mean, cov in zip(mu, sigma)]) + beta[i]
+        log_probabilities = np.log(A[int(new_state_path[i-1]), :]) + \
+                            np.array([multivariate_normal.logpdf(observations[i], mean=mean, cov=cov) for mean, cov in zip(mu, sigma)]) + \
+                            beta[i]
+
         probabilities = compute_probabilities(log_probabilities)
+
         new_state_path[i] = multinomial(probabilities)
+
     return new_state_path
 
-@jit(nopython=True)
-def eexp(x):
-    """
 
-    :param x: x
-    :return: exp(x)
-    """
-    if x == 10000:
-        return 0
-    else:
-        return np.exp(x)
+# @jit(nopython=True)
+# def eexp(x):
+#     """
+#
+#     :param x: x
+#     :return: exp(x)
+#     """
+#     if x == 10000:
+#         return 0
+#     else:
+#         return np.exp(x)
 
 
 @jit(nopython=True)
@@ -132,7 +160,7 @@ def elnproduct(x, y):
         return x + y
 
 
-@jit(nopython=True)
+# @jit(nopython=True)
 def compute_probabilities(log_probabilities):
     """
     Stable way of computing probabilities from log probabilities
@@ -142,12 +170,7 @@ def compute_probabilities(log_probabilities):
     :param log_probabilities: log likelihood vector
     :return: probability vector
     """
-    probabilities = np.exp(log_probabilities) / np.sum(np.exp(log_probabilities))  # make probs add up to 1
-
-    if np.sum(probabilities) == 1:  # just in case there is some underflow/overflow stuff
-        return probabilities
-
-    else:
+    if np.sum(np.exp(log_probabilities)) == 0:
         max = np.amax(log_probabilities)
         log_probabilities = log_probabilities - max
         valid_probabilities = np.empty(0)
@@ -159,6 +182,12 @@ def compute_probabilities(log_probabilities):
                 valid_probabilities = np.append(valid_probabilities, 0)
 
         return valid_probabilities / np.sum(valid_probabilities)
+    else:
+        probabilities = np.exp(log_probabilities) / np.sum(np.exp(log_probabilities))  # make probs add up to 1
+        if np.sum(probabilities) == 1 or np.isclose(np.sum(probabilities), 1, 0.001):
+            return probabilities
+        else:
+            raise ValueError("np.sum(probabilities) != 1")
 
 
 @jit(nopython=True)
@@ -194,32 +223,6 @@ def normal_pdf(x, mu, sigma=0.5):
 
 import numpy as np
 from numba import jit
-
-
-# @jit(nopython=True)
-def multivariate_normal_log_pdf(x, mu, cov):
-    """
-    Calculate the log PDF of a multivariate normal distribution.
-    """
-    n = len(x)
-
-    # Check dimensions
-    if len(mu) != n or cov.shape != (n, n):
-        raise ValueError("Incompatible dimensions for mean and covariance matrix.")
-
-    part1 = 1 / (((2 * np.pi) ** (len(mu) / 2)) * (np.linalg.det(cov) ** (1 / 2)))
-    part2 = (-1 / 2) * ((x - mu).T.dot(np.linalg.inv(cov))).dot((x - mu))
-    return_val = float(part1 * np.exp(part2))
-    if return_val <= 0:
-        print('oh dear')
-    try:
-        # Call the function that may raise a RuntimeWarning
-        return_val = np.log(float(part1 * np.exp(part2)))
-    except RuntimeWarning as rw:
-        # Handle the warning
-        print(f"Caught a RuntimeWarning: {rw}")
-    return return_val
-
 
 @jit(nopython=True)
 def normal_log_pdf(val, mean, variance):

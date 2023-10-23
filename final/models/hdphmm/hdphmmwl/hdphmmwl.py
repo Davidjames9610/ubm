@@ -5,11 +5,13 @@ from sklearn.metrics.cluster import adjusted_rand_score as ari
 import numpy as np
 
 from final.models.hdphmm.hdphmmwl.jax_wl import backward_robust_jax
-from final.models.hdphmm.hdphmmwl.numba_wl import backward_robust_mv, sample_states_numba_mv
+from final.models.hdphmm.hdphmmwl.numba_wl import backward_robust_mv, sample_states_likelihood, sample_states_numba
 from numpy.random import binomial
 from final.models.hdphmm.hdphmmwl.consts import *
 import time
 from final.models.hdphmm.hdphmmda.hdp_hmm_da_utils.utils import is_symmetric_positive_semidefinite
+from hmmlearn.stats import _log_multivariate_normal_density_diag
+from hmmlearn._hmmc import backward_log
 class HDPHMMWL():
     def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20, sbp=None):
         """
@@ -110,7 +112,7 @@ class HDPHMMWL():
         shuffled_labels[replace_indices] = random_labels
         # Assign the shuffled labels to self.Z
         self.Z = shuffled_labels
-        if self.Z_true:
+        if self.Z_true is not None:
             print('init ari', np.round(ari(self.Z_true, self.Z), 3))
 
         # sufficient stats
@@ -174,17 +176,29 @@ class HDPHMMWL():
         self.pi = dirichlet.rvs(gem_b, size=1)[0]
 
     def sample_z(self):
-        start = time.time()
-        backwards = backward_robust_mv(self.A, self.mu, self.sigma, self.X)
-        end = time.time()
-        print('time for backward_robust_mv', end - start)
-        self.Z = sample_states_numba_mv(backwards,
-                                     self.pi,
-                                     self.X,
-                                     self.mu,
-                                     self.sigma,
-                                     self.A,
-                                     self.N)
+
+        backwards, likelihood = self.get_backwards_hmmlearn()
+        # Z_a = sample_states_numba(backwards,
+        #                             self.pi,
+        #                             self.X,
+        #                             self.mu,
+        #                             self.sigma,
+        #                             self.A,
+        #                             self.N)
+
+        Z_b = sample_states_likelihood(backwards,
+                                    self.pi,
+                                    self.A,
+                                    self.N,
+                                    likelihood)
+
+        self.Z = Z_b
+
+    def get_backwards_hmmlearn(self):
+        likelihood = _log_multivariate_normal_density_diag(self.X, self.mu, np.diagonal(self.sigma, axis1=1, axis2=2))
+        bwdlattice = backward_log(
+            self.pi, self.A, likelihood)
+        return bwdlattice, likelihood
 
     def update_ss(self):
         for k in range(self.K):
