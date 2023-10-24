@@ -13,6 +13,7 @@ def plot_ellipse(ax, mu, sigma, color):
     ellipse = ax.add_artist(ellipse)
     return ellipse
 
+
 # update this with PCA so can be used w/ more than 2 dimensions
 def plot_hmm_data(data, ss, k, means, covars, counts = None, percent=10, feature_a=0, feature_b=1):
 

@@ -1,4 +1,6 @@
 # Direct Assignment HDP-HMM
+import time
+
 import numpy as np
 from hmmlearn.hmm import GaussianHMM
 
@@ -13,7 +15,7 @@ from final.models.hdphmm.hdphmmda.hdp_hmm_da_utils.utils import *
 from final.models.hdphmm.hdphmmwl.numba_wl import compute_probabilities, multinomial
 
 class InfiniteDirectSamplerHMM():
-    def __init__(self, X, K, Z_true, burn_in=1, iterations=20, verbose=False, sbp=None, temp=1):
+    def __init__(self, X, K, Z_true, burn_in=0, iterations=20, verbose=False, sbp=None, temp=1):
         """
         Initializes the Infinite Direct Sampler Hidden Markov Model.
 
@@ -127,6 +129,8 @@ class InfiniteDirectSamplerHMM():
         self.init_z()
         self.init_giw_and_aux()
         self.update_ss(True)
+        _ = self.get_hmm()
+
 
 # [1] Init -------------------------------------------------------
     def init_sbp(self):
@@ -167,7 +171,7 @@ class InfiniteDirectSamplerHMM():
         kmeans.fit(self.X)
 
         # shuffle labels
-        num_labels_to_replace = int(0.1 * len(kmeans.labels_))
+        num_labels_to_replace = int(0.5 * len(kmeans.labels_))
         # Generate random labels between 0 and k
         random_labels = np.random.randint(0, self.K, num_labels_to_replace)
         # Replace 10% of the labels with random numbers
@@ -185,7 +189,7 @@ class InfiniteDirectSamplerHMM():
         diagsig = np.diag(np.diag(sig_bar))
         self.giw[M0] = np.mean(self.X, axis = 0)
         self.giw[K0] = 0.1
-        self.giw[S0] = np.eye(self.D, self.D) * 100 # diagsig   #
+        self.giw[S0] = np.eye(self.D, self.D) * 10 # diagsig   #
         self.giw[NU0] = np.copy(self.D) + 2  # 1 Degrees of freedom IW, nu0 + 2 will mean <sigma> = S0
 
         self.aux[M_MAT] = np.zeros((self.K,self.K))
@@ -482,10 +486,6 @@ class InfiniteDirectSamplerHMM():
         self.ss[N_MAT] = n_mat
         self.ss[N_FT] = n_ft
 
-        if initialising:
-            mu, sigma = self.get_map_gauss_params()
-            if self.verbose:
-                plot_hmm_data(self.X, self.Z, self.K, mu, sigma)
     def gibbs_sweep(self):
         self.sample_z()
         self.update_ss()
@@ -501,11 +501,15 @@ class InfiniteDirectSamplerHMM():
             MU_TRACE: [],
             SIGMA_TRACE: [],
             A_TRACE: [],
-            PIE_TRACE: []
+            PIE_TRACE: [],
+            TIME: []
         }
+
+        start_time = time.time()
 
         for it in range(self.iterations):
 
+            start = time.time()
             self.gibbs_sweep()
 
             # collect samples
@@ -516,31 +520,33 @@ class InfiniteDirectSamplerHMM():
             self.track[SIGMA_TRACE].append(sigma)
             self.track[A_TRACE].append(A)
             self.track[PIE_TRACE].append(pie)
-            _ = self.get_hmm()
-            self.track[LL].append(self.get_likelihood())
 
             if it > self.burn_in:
 
-                # Calculate ARI
                 if self.Z_true is not None:
                     self.track[ARI][it] = np.round(ari(self.Z_true, self.Z), 3)
-                    print('iter: ', it, '   ARI: ', self.track[ARI][it], '      ll: ', self.track[LL][it], '    K: ', self.K)
-
-                    if self.track[ARI][it] >= 0.98 and np.abs(self.track[LL][it] - self.track[LL][it-1]) < self.tol:
-                        print('ARI has reached 1 complete')
-                        break
-                else:
-                    print('iter: ', it, '   ll: ', self.track[LL][it], '    K: ',
+                    print('iter: ', it, '   ARI: ', self.track[ARI][it], '    K: ',
                           self.K)
 
+                if it%10 == 0:
+                    _ = self.get_hmm()
+                    self.track[LL].append(self.get_likelihood())
+                    print('ll:  ', self.track[LL][-1])
 
-        print('completed iterations')
+            end = time.time()
+            self.track[TIME].append(end - start)
+            print('it: ', it, " -- ", end - start)
+
+                # Calculate ARI
+                #     if self.track[ARI][it] >= 0.98 and np.abs(self.track[LL][it] - self.track[LL][it-1]) < self.tol:
+                #         print('ARI has reached 1 complete')
+                #         break
+
+
+        end_time = time.time()
+        print('completed iterations in: ', end_time - start_time)
+
         _ = self.get_hmm()
-
-        # plot updated
-        if self.verbose:
-            mu, sigma = self.get_map_gauss_params()
-            plot_hmm_data(self.X, self.Z, self.K, mu, sigma)
 
 # __________ Everything not part of gibbs sampling
     def get_map_gauss_params(self):
@@ -597,21 +603,24 @@ class InfiniteDirectSamplerHMM():
 
     def get_hmm(self):
         # create hmm from most recent params
-        sigma = self.track[SIGMA_TRACE][-1]
-        mu = self.track[MU_TRACE][-1]
-        pie = self.track[PIE_TRACE][-1]
-        A = self.track[A_TRACE][-1]
-
+        if(len(self.track[A_TRACE]) > 0):
+            sigma = self.track[SIGMA_TRACE][-1]
+            mu = self.track[MU_TRACE][-1]
+            pie = self.track[PIE_TRACE][-1]
+            A = self.track[A_TRACE][-1]
+        else:
+            mu, sigma = self.get_map_gauss_params()
+            A, pie = self.sample_pi()
         hmm_updated = GaussianHMM(self.K, covariance_type='full')
         hmm_updated.n_features, hmm_updated.covars_, hmm_updated.means_, hmm_updated.startprob_, hmm_updated.transmat_ = \
             self.D, sigma, mu, pie, A
-
         self.hmm = hmm_updated
         return self.hmm
 
     def get_likelihood(self):
         # likelihood of hmm, update hmmlearn object and using it for simplicity
-        return self.hmm.score(self.X)
+        log_prob, _ = self.hmm.decode(self.X[:200])
+        return log_prob
 
 if __name__ == '__main__':
     print('demo')
