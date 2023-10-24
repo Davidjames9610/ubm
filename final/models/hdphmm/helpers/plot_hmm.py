@@ -27,15 +27,13 @@ def plot_hmm_data(data, ss, k, means, covars, counts = None, percent=10, feature
     plt.scatter(data[:, feature_a], data[:, feature_b], c=colors, marker='o')
 
     for state in range(k):
-        state_data = data[ss == state]
         state_mean = np.array([means[state][feature_a], means[state][feature_b]])
-        state_cov = covars[state][:2, :2]
         state_cov = np.diag(np.array([covars[state][feature_a][feature_a], covars[state][feature_b][feature_b]]))
         if counts is not None:
             if counts[state] > (len(ss) * percent / 100):
                 plot_ellipse(plt.gca(), state_mean, state_cov, color=state_color_mapping[state])
         else:
-            plot_ellipse(plt.gca(), state_mean, state_cov, color=f'C{state}')
+            plot_ellipse(plt.gca(), state_mean, state_cov, color=state_color_mapping[state])
 
     # Add labels and title
     plt.xlabel('Feature 1')

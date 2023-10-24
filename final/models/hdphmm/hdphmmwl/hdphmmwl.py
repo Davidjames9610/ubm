@@ -1,4 +1,4 @@
-
+from hmmlearn.hmm import GaussianHMM
 from sklearn.cluster import KMeans
 from scipy.stats import dirichlet, invwishart
 from sklearn.metrics.cluster import adjusted_rand_score as ari
@@ -13,7 +13,7 @@ from final.models.hdphmm.hdphmmda.hdp_hmm_da_utils.utils import is_symmetric_pos
 from hmmlearn.stats import _log_multivariate_normal_density_diag
 from hmmlearn._hmmc import backward_log
 class HDPHMMWL():
-    def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20, sbp=None):
+    def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20, sbp=None, decode_length=200):
         """
         [] input
         X = data n x d
@@ -92,6 +92,9 @@ class HDPHMMWL():
         self.pi_trace = []
         self.ARI = np.zeros((self.iterations))
         self.likelihood_history = []
+
+        self.hmm = None
+        self.decode_length = decode_length
 
     def init_z(self):
 
@@ -273,10 +276,14 @@ class HDPHMMWL():
         self.beta = beta_vec
 
     @staticmethod
-    def add_tiny_amount(matrix, tiny_amount=1e-6):
+    def add_tiny_amount(matrix, tiny_amount=1e-5):
         # Add tiny_amount to elements less than or equal to 0
         matrix = np.where(matrix <= 0, matrix + tiny_amount, matrix)
         return matrix
+
+    def normalize_matrix(self, matrix):
+        matrix = self.add_tiny_amount(matrix)
+        return matrix / np.sum(matrix, axis=(matrix.ndim -1), keepdims=True)
 
     def sample_A(self):
         A = np.zeros((self.K,self.K))
@@ -285,14 +292,12 @@ class HDPHMMWL():
             prob_vec[k] += self.kappa0
             prob_vec[prob_vec<0.01] = 0.01
             A[k] = dirichlet.rvs(prob_vec, size=1)[0]
-        A = self.add_tiny_amount(A)
-        self.A = A / np.sum(A, axis=1)
+        self.A = self.normalize_matrix(A)
 
         prob_vec = (self.alpha0*self.beta)+self.n_ft
         prob_vec[prob_vec<0.01] = 0.01
         pi = dirichlet.rvs(prob_vec, size=1)[0]
-        pi = self.add_tiny_amount(pi)
-        self.pi = pi / np.sum(pi)
+        self.pi = self.normalize_matrix(pi)
 
     def sample_theta(self):
         # [1] sample params using assignments
@@ -320,7 +325,40 @@ class HDPHMMWL():
                     Sk = np.diag(np.diag(Sk))
                 # sample sigma
                 self.sigma[k] = np.diag(np.diag(invwishart.rvs(size=1, df=nuk, scale=Sk)))
+    def create_hmm(self):
+        # use the latest samples to create a hmmLearn object
 
+        A = np.copy(self.A)
+        pi = np.copy(self.pi)
+        means = np.copy(self.mu)
+        covar = np.copy(self.sigma)
+        n_components = np.copy(self.K)
+
+        # remove states with zero counts
+        nk = np.zeros(self.K)
+        for k in range(self.K):
+            nk[k] = np.sum(self.Z == k)
+        zero_indices = np.where(nk == 0)[0]
+        if len(zero_indices) > 0:
+            rem_ind = np.unique(self.Z).astype(int)
+            A = A[rem_ind][:, rem_ind]
+            pi = pi[rem_ind]
+            means = means[rem_ind]
+            covar = covar[rem_ind]
+            n_components = len(rem_ind)
+
+        # creat hmm
+        hmm = GaussianHMM(n_components, covariance_type='diag', init_params='')
+        hmm.n_features = self.D
+        hmm.transmat_, hmm.startprob_, hmm.means_ = self.normalize_matrix(A), self.normalize_matrix(pi), means
+        hmm.covars_ = np.array([np.diag(i) for i in covar])
+
+        self.hmm = hmm
+
+    def get_likelihood(self):
+        self.create_hmm()
+        log_prob, _ = self.hmm.decode(self.X[:200])   # update this for multiple sequences ...
+        return log_prob
     def gibbs_sweep(self):
         self.sample_z()
         self.update_ss()
@@ -329,23 +367,23 @@ class HDPHMMWL():
         self.sample_A()
         self.sample_theta()
 
-    def fit(self):
+    def fit(self, more_iterations=0, verbose=False):
+
         print('fitting using gibbs sampling')
 
         # init trace
 
         self.trace[TIME] = []
+        self.trace[LL] = []
+        start_time = time.time()
 
-        for it in range(self.iterations):
-
-            start_time = time.time()
-
+        for it in range(self.iterations + more_iterations):
+            start_time_gibbs = time.time()
             self.gibbs_sweep()
-
-            end_time = time.time()
+            end_time_gibbs = time.time()
+            self.trace[TIME].append(start_time_gibbs - end_time_gibbs)
             # save trace
             # if it > self.burn_in:
-            self.trace[TIME].append(end_time - start_time)
             self.mu_trace.append(self.mu)
             self.sigma_trace.append(self.sigma)
             self.pi_trace.append(self.pi)
@@ -354,6 +392,14 @@ class HDPHMMWL():
             if self.Z_true is not None:
                 self.ARI[it] = np.round(ari(self.Z_true, self.Z), 3)
 
+            if verbose:
+                if it%10 == 0:
+                    cur_ll = self.get_likelihood()
+                    self.trace[LL].append(cur_ll)
+                    print('it: ', it,' || Likelihood: ', cur_ll)
+
+        end_time = time.time()
+        print('completed gibbs sampling in ',end_time - start_time)
 
 if __name__ == '__main__':
     print('demo')
