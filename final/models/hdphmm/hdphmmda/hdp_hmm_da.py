@@ -1,5 +1,5 @@
 # Direct Assignment HDP-HMM
-
+import numpy as np
 from hmmlearn.hmm import GaussianHMM
 
 from final.models.hdphmm.hdphmmda.hdp_hmm_da_utils.hdp_hmm_da_consts import *
@@ -10,6 +10,7 @@ from sklearn.metrics.cluster import adjusted_rand_score as ari
 from final.models.hdphmm.helpers.plot_hmm import plot_hmm_data
 from numpy.random import binomial
 from final.models.hdphmm.hdphmmda.hdp_hmm_da_utils.utils import *
+from final.models.hdphmm.hdphmmwl.numba_wl import compute_probabilities, multinomial
 
 class InfiniteDirectSamplerHMM():
     def __init__(self, X, K, Z_true, burn_in=1, iterations=20, verbose=False, sbp=None, temp=1):
@@ -80,6 +81,7 @@ class InfiniteDirectSamplerHMM():
         self.tol = 1e-2
         self.sbp_prior = sbp
         self.temp = temp
+        self.tiny = 1e-300
 
         self.giw = {
             # M0: None,
@@ -182,7 +184,7 @@ class InfiniteDirectSamplerHMM():
         sig_bar = np.cov(self.X.T, bias=True)
         diagsig = np.diag(np.diag(sig_bar))
         self.giw[M0] = np.mean(self.X, axis = 0)
-        self.giw[K0] = 1
+        self.giw[K0] = 0.1
         self.giw[S0] = np.eye(self.D, self.D) * 100 # diagsig   #
         self.giw[NU0] = np.copy(self.D) + 2  # 1 Degrees of freedom IW, nu0 + 2 will mean <sigma> = S0
 
@@ -201,22 +203,27 @@ class InfiniteDirectSamplerHMM():
         m0 = np.copy(self.giw[M0])
         nu0 = self.giw[NU0]
 
-        Sc = s0 + (np.outer(m0, m0) * k0)
+        Sc = np.diag(np.diag(s0 + (np.outer(m0, m0) * k0)))
 
         outer_c = np.zeros((self.N, self.D, self.D))
         for i in range(self.N):
             outer_c[i, :, :] = np.outer(self.X[i], self.X[i])
 
+        index_of_x = np.where(self.X == x)[0][0]
+        class_of_x = self.Z[index_of_x]
+
         probs = np.zeros(self.K)
         for k in range(self.K):
             if self.ss[NK][k] > 0:
+                if(class_of_x == k):
+                    print('check')
                 # a lot of this should be cached
                 kn = k0 + self.ss[NK][k]
                 nun = nu0 + self.ss[NK][k]
                 mc = (k0 * m0) / kn
 
                 # calculate Sx
-                Sx = np.sum(outer_c[self.Z == k], axis=0)
+                Sx = np.sum(outer_c[self.Z == k], axis=0) # -
 
                 # mn
                 # mn_top_a = (self.nk[k] * self.x_bar[k])
@@ -224,11 +231,14 @@ class InfiniteDirectSamplerHMM():
                 mn = mc + mn_top_b / kn
 
                 # Sn
-                Sn = Sc + Sx - (np.outer(mn, mn) * kn)
+                Sn = Sc + np.diag(np.diag(Sx)) - np.diag(np.diag(np.outer(mn, mn) * kn))
 
-                prob_k = student_t_giw(x, mn, kn, nun, Sn, self.D)
-                if(prob_k > 0):
-                    print('warning')
+                if(np.all(Sn >= 0)):
+                    prob_k = student_t_giw(x, mn, kn, nun, Sn, self.D)
+                else:
+                    index_of_x = np.where(self.X == x)[0][0]
+                    class_of_x = self.Z[index_of_x]
+                    prob_k = student_t_giw(x, mn, kn, nun, Sc, self.D)
                 probs[k] = prob_k
             else:
                 probs[k] = student_t_giw(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0], self.D)
@@ -241,7 +251,6 @@ class InfiniteDirectSamplerHMM():
         # define vars for easy reading and avoid changing
         alpha0 = self.sbp[ALPHA0]
         kappa0 = self.sbp[KAPPA0]
-        rho0 = self.sbp[RHO0]
         beta_vec = np.copy(self.sbp[BETA_VEC])
         beta_new = self.sbp[BETA_NEW]
         n_mat = np.copy(self.ss[N_MAT])
@@ -265,21 +274,22 @@ class InfiniteDirectSamplerHMM():
                 (alpha0**2)*beta_vec[l]*beta_new\
                 /((alpha0+kappa0)*(alpha0+n_mat[j].sum()+kappa0))
 
-            return np.log(zt_dist*ztplus1_dist), np.log(new_dist)
+            return_value = np.log((zt_dist*ztplus1_dist) + self.tiny), np.log(new_dist + self.tiny)
+            return return_value
         else:
 
             zt_dist = \
-                (alpha0*beta_vec + n_mat[j]+rho0*(j==tmp_vec))\
-                /(alpha0 +n_mat[j].sum()+rho0)
+                (alpha0*beta_vec + n_mat[j]+kappa0*(j==tmp_vec))\
+                /(alpha0 +n_mat[j].sum()+kappa0)
 
             new_dist = \
                 alpha0*beta_new\
-                /(alpha0+n_mat[j].sum()+rho0)
+                /(alpha0+n_mat[j].sum()+kappa0)
 
-            return np.log(zt_dist), np.log(new_dist)
+            return np.log(zt_dist + self.tiny), np.log(new_dist + self.tiny)
     @staticmethod
-    def boltzmann_softmax(logits, temperature=1.0):
-        exp_logits = np.exp(logits / temperature)
+    def boltzmann_softmax(logits, temperature=1.0, small_amount=1e-5):
+        exp_logits = np.exp(logits / temperature) + small_amount
         probabilities = exp_logits / np.sum(exp_logits)
         return probabilities
 
@@ -299,11 +309,9 @@ class InfiniteDirectSamplerHMM():
 
             # sample z
             post_cases = np.hstack((zt_dist+x_dist, zt_dist_new+x_dist_new))
-            post_cases = self.boltzmann_softmax(post_cases, self.temp)    # softmax
-            try:
-                self.Z[t] = np.where(np.random.multinomial(n=1, pvals=post_cases, size=1).flatten())[0][0]
-            except Exception as e:
-                print('failed', e)
+
+            post_cases_probs = compute_probabilities(post_cases)
+            self.Z[t] = multinomial(post_cases_probs)
 
             # new state
             if self.Z[t] == self.K:
@@ -324,6 +332,20 @@ class InfiniteDirectSamplerHMM():
             self.add_x_to_z(t, x)
             self.handle_empty_components()
 
+        self.assign_first_point()
+
+    # re-assign first point to same as second for the moment
+    def assign_first_point(self):
+
+        zt = self.Z[0]
+        l = self.Z[1]
+        self.ss[NK][zt] -= 1
+        self.ss[N_MAT][zt, l] -= 1
+
+        self.Z[0] = l
+        self.ss[NK][l] += 1
+        self.ss[N_MAT][l, l] += 1
+
     # remove x from z and update ss
     def remove_x_from_z(self, t, x):
         # t is current index of z
@@ -336,6 +358,8 @@ class InfiniteDirectSamplerHMM():
         if t + 1 < self.N:
             l = self.Z[t+1]
             self.ss[N_MAT][zt, l] -=1
+
+        self.Z[t] = -1  # will be re-assigned above
 
     def add_x_to_z(self, t, x):
         # t is current index of z
@@ -366,6 +390,7 @@ class InfiniteDirectSamplerHMM():
             self.ss[NK] = self.ss[NK][rem_ind]
             self.sbp[BETA_VEC] = self.sbp[BETA_VEC][rem_ind]
             self.K = len(rem_ind)
+            self.update_ss()
 
 # [2.b] Sampling others
     def sample_aux_vars(self):
@@ -392,8 +417,6 @@ class InfiniteDirectSamplerHMM():
                 if m_mat[j,j]>0:
                     w_vec[j] = binomial(m_mat[j,j], stick_ratio/(stick_ratio+self.sbp[BETA_VEC][j]*(1-stick_ratio)))
                     m_mat_bar[j,j] = m_mat[j,j] - w_vec[j]
-                    if m_mat_bar[j,j] == 1:
-                        m_mat_bar[j, j] += 1
 
         self.aux[W_VEC] = w_vec
         self.aux[M_MAT_BAR] = m_mat_bar
@@ -404,7 +427,11 @@ class InfiniteDirectSamplerHMM():
 
     def sample_beta(self):
         try:
-            beta_vec = dirichlet.rvs(np.hstack((self.aux[M_MAT_BAR].sum(axis=0), self.sbp[GAMMA0])), size=1)[0]
+            prob = (self.aux[M_MAT_BAR].sum(axis=0))
+            if(np.any(prob == 0)):
+                print('warning')
+            prob[prob == 0] += 0.01
+            beta_vec = dirichlet.rvs(np.hstack((prob, self.sbp[GAMMA0])), size=1)[0]
             beta_new = beta_vec[-1]
             beta_vec = beta_vec[:-1]
 
@@ -440,7 +467,7 @@ class InfiniteDirectSamplerHMM():
         n_ft = np.zeros((self.K))
         n_ft[int(self.Z[0])] += 1
 
-        if not initialising:
+        if not initialising and self.verbose:
             if np.all(self.ss[NK] == nk) != True:
                 print('warning self.nk == nk) != True:')
 
@@ -461,9 +488,9 @@ class InfiniteDirectSamplerHMM():
                 plot_hmm_data(self.X, self.Z, self.K, mu, sigma)
     def gibbs_sweep(self):
         self.sample_z()
+        self.update_ss()
         self.sample_aux_vars()
         self.sample_beta()
-        self.update_ss()
         # sample hyper-params
 
     def fit(self):

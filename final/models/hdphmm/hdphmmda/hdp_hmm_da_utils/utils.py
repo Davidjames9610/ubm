@@ -6,6 +6,7 @@ import math
 def multivariate_students_t(x, mu, shape, v, D):
 
     if is_symmetric_positive_semidefinite(shape) is False:
+        print('is_symmetric_positive_semidefinite(shape) is False')
         shape = ensure_symmetric_positive_semidefinite(shape)
 
     delta = x - mu
