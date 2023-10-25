@@ -87,7 +87,7 @@ class DecodeCombineBase:
         pass
 
 class DecodeCombineGaussian(DecodeCombineBase):
-    def __init__(self, array_of_hmms: [GaussianHMM]):
+    def __init__(self, array_of_hmms: [GaussianHMM], verbose=False):
         super().__init__(array_of_hmms)
         means = self.__calculate_mean_matrix()
         covars = self.__calculate_covar_matrix()
@@ -98,6 +98,7 @@ class DecodeCombineGaussian(DecodeCombineBase):
         equiv_hmm.startprob_ = self.pie
         equiv_hmm.transmat_ = self.a
         self.hmm = equiv_hmm
+        self.verbose = verbose
 
     def __calculate_combined_emission_matrix(self, data):
         log_bs = []
@@ -121,7 +122,8 @@ class DecodeCombineGaussian(DecodeCombineBase):
         return covars
 
     def decode_hmmlearn(self, data):
-        print('decoding using hmmlearn')
+        if self.verbose:
+            print('decoding using hmmlearn')
         total_t = len(data)
         log_prob, ss = self.hmm.decode(data)
 

@@ -87,7 +87,7 @@ def find_similar_states_kl(hmm1, hmm2):
             gmm_1 = st.multivariate_normal(hmm1.means_[i],hmm1.covars_[i])
             gmm_2 = st.multivariate_normal(hmm2.means_[j],hmm2.covars_[j])
 
-            kl_div = gmm_kl(gmm_1, gmm_2)
+            kl_div = gmm_kl(gmm_1, gmm_2, 10**2)
             dict_js[i,j]  = kl_div
     return dict_js
 
@@ -101,6 +101,8 @@ def delete_component(hmm1, component_to_delete):
     new_hmm.transmat_ = transmat_ / np.sum(transmat_, axis=1, keepdims=True)  # Normalization along axis=1
 
     startprob_ = np.delete(hmm1.startprob_, component_to_delete)
+    if np.sum(startprob_) == 0:
+        startprob_[np.argmax(np.sum(new_hmm.transmat_, axis=0))] = 1
     new_hmm.startprob_ = startprob_ / np.sum(startprob_, axis=0, keepdims=True)  # Normalization along axis=1
 
     new_hmm.means_ = np.delete(hmm1.means_, component_to_delete, axis=0)
@@ -193,6 +195,7 @@ def plot_spectrogram(features, true_labels, pred_labels, label_type, label_abr):
 
     times = np.arange(features.shape[0])
     frequencies = np.arange(features.shape[1])
+    freq_max = features.shape[1]
     true_changes = find_label_changes(true_labels)
 
     pred_changes = find_label_changes(pred_labels)
@@ -200,7 +203,7 @@ def plot_spectrogram(features, true_labels, pred_labels, label_type, label_abr):
     for index, label in true_changes:
         t = plt.text(times[index + 8], frequencies[-7], label_abr[label], color='black', fontsize=10, verticalalignment='bottom')
         t.set_bbox(dict(facecolor='white', alpha=0.8, edgecolor='red', linewidth=0))
-        plt.vlines(times[index], ymin=frequencies.max() / 2, ymax=frequencies.max(), color='black', linestyles='dashed', linewidth=1)
+        plt.vlines(times[index], ymin=freq_max / 2, ymax=freq_max, color='black', linestyles='dashed', linewidth=1)
 
     for index, label in pred_changes:
         if(index + 8 < len(times)):
@@ -209,9 +212,9 @@ def plot_spectrogram(features, true_labels, pred_labels, label_type, label_abr):
             t = plt.text(times[index], frequencies[3], label_abr[label], color='red', fontsize=10,
                          verticalalignment='bottom')
         t.set_bbox(dict(facecolor='white', alpha=0.8, edgecolor='red', linewidth=0))
-        plt.vlines(times[index], ymin=frequencies.min(), ymax=frequencies.max() / 2, color='red', linestyles='solid', linewidth=2)
+        plt.vlines(times[index], ymin=0, ymax=freq_max / 2, color='red', linestyles='solid', linewidth=2)
 
-    plt.pcolormesh(features.T)
+    plt.pcolormesh(features.T, cmap='viridis')
     plt.ylabel('F bin')
     plt.xlabel('T bin')
     legend_labels = [label_abr[label] + ' - ' + label_type[label].title() for label in label_type]
@@ -266,3 +269,11 @@ def smooth_labels(labels, window_size=50, step_size=10, diff_size=20):
                     smoothy_labels[index_curr: index_fwd] = np.ones(diff) * fwd
                     changes[i - 1] = fwd
     return smoothy_labels
+
+def add_tiny_amount(matrix, tiny_amount=1e-5):
+    # Add tiny_amount to elements less than or equal to 0
+    matrix = np.where(matrix <= 0, matrix + tiny_amount, matrix)
+    return matrix
+def normalize_matrix(matrix):
+    matrix = add_tiny_amount(matrix)
+    return matrix / np.sum(matrix, axis=(matrix.ndim -1), keepdims=True)

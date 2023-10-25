@@ -199,6 +199,17 @@ class InfiniteDirectSamplerHMM():
 
 # [2] Gibbs sampling -------------------------------------------------------
 
+    def student_t_post_test(self, x):
+        probs = np.zeros(self.K)
+        for k in range(self.K):
+            if self.ss[NK][k] > 0:
+                probs[k] = multivariate_students_t_numba(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0], self.D)
+            else:
+                probs[k] = multivariate_students_t_numba(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0], self.D)
+        x_dist_new = multivariate_students_t_numba(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0], self.D)
+        return probs, x_dist_new
+
+
 # [2.a] Sampling Z ---------------------------------------------------------
     # predictive prob of x belonging to params of NIW
     def student_t_post(self, x):
@@ -219,15 +230,13 @@ class InfiniteDirectSamplerHMM():
         probs = np.zeros(self.K)
         for k in range(self.K):
             if self.ss[NK][k] > 0:
-                if(class_of_x == k):
-                    print('check')
                 # a lot of this should be cached
                 kn = k0 + self.ss[NK][k]
                 nun = nu0 + self.ss[NK][k]
                 mc = (k0 * m0) / kn
 
                 # calculate Sx
-                Sx = np.sum(outer_c[self.Z == k], axis=0) # -
+                Sx = np.sum(outer_c[self.Z == k], axis=0) # - move out
 
                 # mn
                 # mn_top_a = (self.nk[k] * self.x_bar[k])
@@ -237,12 +246,12 @@ class InfiniteDirectSamplerHMM():
                 # Sn
                 Sn = Sc + np.diag(np.diag(Sx)) - np.diag(np.diag(np.outer(mn, mn) * kn))
 
-                if(np.all(Sn >= 0)):
-                    prob_k = student_t_giw(x, mn, kn, nun, Sn, self.D)
-                else:
-                    index_of_x = np.where(self.X == x)[0][0]
-                    class_of_x = self.Z[index_of_x]
-                    prob_k = student_t_giw(x, mn, kn, nun, Sc, self.D)
+                prob_k = student_t_giw(x, mn, kn, nun, Sn, self.D)
+                # if (np.all(Sn >= 0)):
+                # else:
+                #     index_of_x = np.where(self.X == x)[0][0]
+                #     class_of_x = self.Z[index_of_x]
+                #     prob_k = student_t_giw(x, mn, kn, nun, Sc, self.D)
                 probs[k] = prob_k
             else:
                 probs[k] = student_t_giw(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0], self.D)
@@ -299,6 +308,8 @@ class InfiniteDirectSamplerHMM():
 
     def sample_z(self):
 
+        s = time.time()
+
         for t in range(1, self.N):
             # remove current assignment of z_t from stats and counts
 
@@ -306,10 +317,21 @@ class InfiniteDirectSamplerHMM():
             self.remove_x_from_z(t, x)
 
             # log prob of CRF
+            start = time.time()
             zt_dist, zt_dist_new = self.get_crf_prob(t)
+            end = time.time()
+            print('self.get_crf_prob(t)', end - start)
 
             # log prob of x | hyper-params
+            start = time.time()
             x_dist, x_dist_new = self.student_t_post(x)
+            end = time.time()
+            print('self.student_t_post(x)', end - start)
+
+            start = time.time()
+            _,_ = self.student_t_post_test(x)
+            end = time.time()
+            print('self.student_t_post_test(x)', end - start)
 
             # sample z
             post_cases = np.hstack((zt_dist+x_dist, zt_dist_new+x_dist_new))
@@ -335,6 +357,10 @@ class InfiniteDirectSamplerHMM():
             # update ss
             self.add_x_to_z(t, x)
             self.handle_empty_components()
+
+        e = time.time()
+
+        print('for t in range(1, self.N): ', e - s)
 
         self.assign_first_point()
 

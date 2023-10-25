@@ -1,14 +1,28 @@
+from numba import jit
 from scipy.special import gammaln
 import numpy as np
 import math
+import jax.numpy as jnp
+
 
 # mv students t
+# @jit(nopython=True)
+def multivariate_students_t_numba(x, mt, kt, nut, St, D):
+
+    mu = mt
+    shape = St * (kt + 1.)/(kt*(nut - D + 1.))
+    v = int(nut - D + 1.)
+    delta = x - mu
+
+    logdet_covar = jnp.linalg.slogdet(shape)[1]
+    inv_covar = jnp.linalg.pinv(shape)
+
+    return_value = gammaln((v + D) / 2) - gammaln(v / 2) - D / 2 * jnp.log(v) - D / 2 * jnp.log(
+        jnp.pi) - logdet_covar / 2 - (v + D) / 2 * jnp.log(1 + 1. / v * jnp.dot(jnp.dot(delta, inv_covar), delta))
+
+    return return_value
+
 def multivariate_students_t(x, mu, shape, v, D):
-
-    if is_symmetric_positive_semidefinite(shape) is False:
-        print('is_symmetric_positive_semidefinite(shape) is False')
-        shape = ensure_symmetric_positive_semidefinite(shape)
-
     delta = x - mu
     v = int(v)
 
