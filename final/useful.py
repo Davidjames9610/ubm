@@ -149,9 +149,14 @@ def perf_measure(y_actual, y_hat):
     ACC = (TP+TN)/(TP+FP+FN+TN)
 
     return_metrics = {
-        'acc': ACC,
-        'tpr': TPR,
-        'fpr': FPR,
+        'ACC': ACC,
+        'TPR': TPR,
+        'FPR': FPR,
+        'TNR': TNR,
+        'PPV': PPV,
+        'NPV': NPV,
+        'FNR': FNR,
+        'FDR': FDR
     }
 
     return return_metrics
