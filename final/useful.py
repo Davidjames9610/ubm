@@ -53,7 +53,7 @@ def get_log_power_feature(sample, nfft):
 # methods for comparing deleting states in a hmm
 
 import scipy.stats as st
-def distributions_js(distribution_p, distribution_q, n_samples=10 ** 5):
+def distributions_js(distribution_p, distribution_q, n_samples=10**5):
     # jensen shannon divergence. (Jensen shannon distance is the square root of the divergence)
     # all the logarithms are defined as log2 (because of information entrophy)
     X = distribution_p.rvs(n_samples)
@@ -69,13 +69,30 @@ def distributions_js(distribution_p, distribution_q, n_samples=10 ** 5):
     return (np.log2(p_X).mean() - (log_mix_X.mean() - np.log2(2))
             + np.log2(q_Y).mean() - (log_mix_Y.mean() - np.log2(2))) / 2
 
+def find_similar_states_js(hmm1, hmm2, n_samples=10**5):
+
+    dict_js = np.zeros((hmm1.n_components,hmm2.n_components))
+    # Iterate through states in hmm_whale
+    for i in range(hmm1.n_components):
+        # Iterate through states in hmm_noise
+        for j in range(hmm2.n_components):
+            # Calculate KL divergence between the distributions of means and covariances
+            gmm_1 = st.multivariate_normal(hmm1.means_[i],hmm1.covars_[i])
+            gmm_2 = st.multivariate_normal(hmm2.means_[j],hmm2.covars_[j])
+
+            kl_div = distributions_js(gmm_1, gmm_2, n_samples)
+            if np.isclose(kl_div, 0) or kl_div < 0:
+                kl_div = 1e-5
+            dict_js[i,j] = kl_div
+    return np.log(dict_js)
+
 def gmm_kl(gmm_p, gmm_q, n_samples=10**5):
     X = gmm_p.rvs(n_samples)
     log_p_X = gmm_p.logpdf(X)
     log_q_X = gmm_q.logpdf(X)
     return log_p_X.mean() - log_q_X.mean()
 
-def find_similar_states_kl(hmm1, hmm2):
+def find_similar_states_kl(hmm1, hmm2, n_samples=10**5):
     # Adjust the threshold based on your similarity criterion
 
     dict_js = np.zeros((hmm1.n_components,hmm2.n_components))
@@ -87,8 +104,8 @@ def find_similar_states_kl(hmm1, hmm2):
             gmm_1 = st.multivariate_normal(hmm1.means_[i],hmm1.covars_[i])
             gmm_2 = st.multivariate_normal(hmm2.means_[j],hmm2.covars_[j])
 
-            kl_div = gmm_kl(gmm_1, gmm_2, 10**2)
-            dict_js[i,j]  = kl_div
+            kl_div = gmm_kl(gmm_1, gmm_2, n_samples)
+            dict_js[i,j] = kl_div
     return dict_js
 
 def delete_component(hmm1, component_to_delete):
@@ -282,3 +299,31 @@ def add_tiny_amount(matrix, tiny_amount=1e-5):
 def normalize_matrix(matrix):
     matrix = add_tiny_amount(matrix)
     return matrix / np.sum(matrix, axis=(matrix.ndim -1), keepdims=True)
+
+def get_colors():
+    colors = [
+        (0, 0, 255),  # Blue
+        (0, 255, 0),  # Green
+        (255, 0, 0),  # Red
+        (0, 255, 255),  # Cyan
+        (255, 0, 255),  # Magenta
+        (255, 255, 0),  # Yellow
+        (128, 0, 128),  # Purple
+        (0, 128, 128),  # Teal
+        (128, 128, 0),  # Olive
+        (255, 165, 0),  # Orange
+        (70, 130, 180),  # Steel Blue
+        (0, 128, 0),  # Green (Dark Green)
+        (255, 69, 0),  # Red-Orange
+        (30, 144, 255),  # Dodger Blue
+        (255, 20, 147),  # Deep Pink
+        (50, 205, 50),  # Lime Green
+        (219, 112, 147),  # Pale Violet Red
+        (0, 255, 127),  # Spring Green
+        (135, 206, 250),  # Light Sky Blue
+        (255, 99, 71)  # Tomato
+    ]
+
+    # Normalizing the values to the range [0, 1]
+    colors_normalized = [(r / 255, g / 255, b / 255) for r, g, b in colors]
+    return colors_normalized
