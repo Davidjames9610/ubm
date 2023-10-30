@@ -15,6 +15,7 @@ from hmmlearn.stats import _log_multivariate_normal_density_diag
 from hmmlearn._hmmc import backward_log
 
 from final.models.hdphmm.helpers.plot_hmm import plot_hmm_data, plot_hmm_learn
+import matplotlib.pyplot as plt
 
 
 class HDPHMMWL():
@@ -94,9 +95,6 @@ class HDPHMMWL():
         self.init_z()
 
         self.trace = {}
-        self.mu_trace = []
-        self.sigma_trace = []
-        self.pi_trace = []
         self.ARI = np.zeros((self.iterations))
         self.likelihood_history = []
 
@@ -156,7 +154,7 @@ class HDPHMMWL():
         self.m0 = np.copy(self.x_bar)  # K x D
         if np.isnan(self.m0).any():
             print('nan')
-        self.V0 = np.eye(self.D) * 1000 # D x D
+        self.V0 = np.eye(self.D) * 1000  # D x D
         # Sigma
         self.S0 = diagsig  # K x D x D
         self.nu0 = np.copy(self.D) + 2  # 1 Degrees of freedom IW
@@ -253,7 +251,7 @@ class HDPHMMWL():
                 else:
                     # pretend multivariate to len(n_mat) at once and avoid loop
                     x_vec = binomial(1, (self.alpha0 * self.beta[k] + self.kappa0 * (j == k)) / (
-                                np.arange(self.n_mat[j, k]) + self.alpha0 * self.beta[k] + self.kappa0 * (j == k)))
+                            np.arange(self.n_mat[j, k]) + self.alpha0 * self.beta[k] + self.kappa0 * (j == k)))
                     x_vec = np.array(x_vec).reshape(-1)
                     m_mat[j, k] = sum(x_vec)
         self.m_mat = m_mat
@@ -329,6 +327,8 @@ class HDPHMMWL():
 
                 self.mu[k] = mu_k
 
+                # self.trace['mu'][-1][k]
+
                 # sigma
                 dif = (self.X[self.Z == k] - self.mu[k])
                 Sk = (self.S0[k] + (np.dot(dif.T, dif)))
@@ -339,7 +339,7 @@ class HDPHMMWL():
                 # sample sigma
                 self.sigma[k] = np.diag(np.diag(invwishart.rvs(size=1, df=nuk, scale=Sk)))
 
-    def create_hmm(self):
+    def create_hmm(self, covariance_type='diag'):
         # use the latest samples to create a hmmLearn object
 
         A = np.copy(self.A)
@@ -362,10 +362,13 @@ class HDPHMMWL():
             n_components = len(rem_ind)
 
         # creat hmm
-        hmm = GaussianHMM(n_components, covariance_type='diag', init_params='')
+        hmm = GaussianHMM(n_components, covariance_type=covariance_type, init_params='')
         hmm.n_features = self.D
         hmm.transmat_, hmm.startprob_, hmm.means_ = self.normalize_matrix(A), self.normalize_matrix(pi), means
-        hmm.covars_ = np.array([np.diag(i) for i in covar])
+        if covariance_type == 'diag':
+            hmm.covars_ = np.array([np.diag(i) for i in covar])
+        else:
+            hmm.covars_ = np.array([np.diag(np.diag(i)) for i in covar])
 
         self.hmm = hmm
 
@@ -382,17 +385,108 @@ class HDPHMMWL():
         self.sample_A()
         self.sample_theta()
 
-    def fit_multiple(self, iterations=1, outer_its=10, verbose=False):
+    def fit_multiple(self, iterations=1, outer_its=10, verbose=False, burn_in=500):
+
+        # init trace
+        self.trace['n_components'] = []
+        self.trace['n_components_all'] = []
+        self.trace['nk'] = []
+        self.trace['A'] = []
+        self.trace['pie'] = []
+        self.trace['mu'] = []
+        self.trace['covar'] = []
+        all_its = 0
+
         if iterations is not None:
             self.iterations = iterations
+
+        print('iterations per sample: ', self.iterations)
+        start_time = time.time()
         for outer_it in range(outer_its):
             for i in range(len(self.X_list)):
+                print('Gibb sampling on sample index: ', i, 'outer it: ', outer_it)
+
                 self.X = self.X_list[i]
                 self.N = self.X.shape[0]
-                self.fit(verbose=True)
+
+                self.trace[TIME] = []
+                self.trace[LL] = []
+                self.ARI = np.zeros(self.iterations)
+
+                for it in range(self.iterations):
+                    all_its += 1
+                    start_time_gibbs = time.time()
+                    self.gibbs_sweep()
+                    end_time_gibbs = time.time()
+                    self.trace[TIME].append(start_time_gibbs - end_time_gibbs)
+
+                    # Calculate ARI
+                    if self.Z_true is not None:
+                        self.ARI[it] = np.round(ari(self.Z_true, self.Z), 3)
+
+                    # add values to trace
+                    cur_nk = np.zeros(self.K)
+                    for k in range(self.K):
+                        cur_nk[k] = np.sum(self.Z == k)
+                    zero_indices = np.where(cur_nk > 0)[0]
+                    self.trace['n_components_all'].append(len(zero_indices))
+
+                    if all_its > burn_in - 1:
+                        self.trace['n_components'].append(len(zero_indices))
+                        self.trace['nk'].append(cur_nk)
+                        self.trace['A'].append(np.copy(self.A))
+                        self.trace['pie'].append(np.copy(self.pi))
+                        self.trace['mu'].append(np.copy(self.mu))
+                        self.trace['covar'].append(np.copy(self.sigma))
+
+                    if verbose:
+                        if it % 10 == 0:
+                            cur_ll = self.get_likelihood()
+                            self.trace[LL].append(cur_ll)
+                            print('it: ', it, ' || Likelihood: ', cur_ll, ' || n_components: ', self.hmm.n_components)
+
+                        if all_its % 50 == 0:
+
+                            data = self.trace['n_components_all']
+                            # Define the window size for the rolling average
+                            window_size = 20
+
+                            # Create a kernel for the rolling average
+                            kernel = np.ones(window_size) / window_size
+
+                            # Use np.convolve to calculate the rolling average
+                            rolling_avg = np.convolve(data, kernel, mode='valid')
+
+                            # Create an array of indices corresponding to the original data for plotting
+                            indices = np.arange(window_size - 1, len(data))
+
+                            # Plot the data and rolling average
+                            plt.figure(figsize=(10, 6))
+                            plt.plot(indices, data[window_size - 1:], label='Original Values', marker='o')
+                            plt.plot(indices, rolling_avg, label=f'Rolling Average ({window_size} periods)',
+                                     color='red', linestyle='--', marker='o')
+                            plt.xlabel('Index')
+                            plt.ylabel('Value')
+                            plt.title('Rolling Average Plot')
+                            plt.legend()
+                            plt.show()
+
+                            print(np.mean(self.trace['n_components_all'][-50:]))
+                            print(np.std(self.trace['n_components_all'][-50:]))
+
+                            if all_its > 100:
+                                print(np.mean(self.trace['n_components_all'][-100:]))
+                                print(np.std(self.trace['n_components_all'][-100:]))
+
+
+                        # if it % 100 == 0 and it > 0:
+                        #     plot_hmm_learn(self.X, self.hmm, feature_a=self.feature_a, feature_b=self.feature_b)
+
+        end_time = time.time()
+        print('completed gibbs sampling in ', end_time - start_time)
 
     def check_for_close_states(self, js_threshold=-2):
-        self.create_hmm() # update hmm
+        self.create_hmm()  # update hmm
         similar_states = (useful.find_similar_states_js(self.hmm, self.hmm, 10))
         np.fill_diagonal(similar_states, 0)
         smallest_index = np.unravel_index(np.argmin(similar_states, axis=None), similar_states.shape)
@@ -428,14 +522,17 @@ class HDPHMMWL():
             end_time_gibbs = time.time()
             self.trace[TIME].append(start_time_gibbs - end_time_gibbs)
             # save trace
-            # if it > self.burn_in:
-            self.mu_trace.append(self.mu)
-            self.sigma_trace.append(self.sigma)
-            self.pi_trace.append(self.pi)
 
             # Calculate ARI
             if self.Z_true is not None:
                 self.ARI[it] = np.round(ari(self.Z_true, self.Z), 3)
+
+            # remove states with zero counts
+            cur_nk = np.zeros(self.K)
+            for k in range(self.K):
+                cur_nk[k] = np.sum(self.Z == k)
+            zero_indices = np.where(cur_nk > 0)[0]
+            self.trace['n_components'].append(len(zero_indices))
 
             if verbose:
                 if it % 10 == 0:
@@ -451,6 +548,7 @@ class HDPHMMWL():
 
     def plot_hmmlearn(self, feature_a=0, feature_b=1, percent=0.1):
         plot_hmm_learn(self.X, self.hmm, feature_a=feature_a, feature_b=feature_b, percent=percent)
+
 
 if __name__ == '__main__':
     print('demo')

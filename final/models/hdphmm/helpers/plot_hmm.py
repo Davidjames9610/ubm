@@ -59,7 +59,7 @@ def plot_hmm_learn(data, hmm: GaussianHMM, percent=10, feature_a=0, feature_b=1)
     handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=color, markersize=5) for color in
                colors_array]
     labels = [f'Component {state}' for state in states_set]
-    ax.legend(handles[:10], labels[:10], loc='upper right')
+    ax.legend(handles[:10], labels[:10], loc='upper left')
     plt.show()
 
 # update this with PCA so can be used w/ more than 2 dimensions
