@@ -130,6 +130,27 @@ def delete_component(hmm1, component_to_delete):
 
     return new_hmm
 
+def delete_component_indicies(original_hmm: GaussianHMM, zero_indices, verbose=False):
+    # Remove the component_to_delete
+    if verbose:
+        print('deleting comp', zero_indices)
+
+    # new_hmm = GaussianHMM(n_components=hmm1.n_components - 1, covariance_type=hmm1.covariance_type)
+    # new_hmm.n_features = hmm1.n_features
+
+    rem_ind = zero_indices.astype(int)
+    A = original_hmm.transmat_[rem_ind][:, rem_ind]
+    pi = original_hmm.startprob_[rem_ind]
+    means = original_hmm.means_[rem_ind]
+    covar = original_hmm.covars_[rem_ind]
+
+    new_hmm = GaussianHMM(A.shape[0], covariance_type='diag')
+    new_hmm.n_features = means.shape[1]
+    new_hmm.transmat_, new_hmm.startprob_, new_hmm.means_ = normalize_matrix(A), normalize_matrix(pi), means
+    new_hmm.covars_ = np.array([np.diag(i) for i in covar])
+
+    return new_hmm
+
 # accuracy measures
 def perf_measure(y_actual, y_hat):
     TP = 0
