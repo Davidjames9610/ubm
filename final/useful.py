@@ -2,6 +2,7 @@ import librosa
 import torchaudio
 from hmmlearn.hmm import GaussianHMM
 from matplotlib import pyplot as plt
+from sklearn.metrics import confusion_matrix
 from spafe.utils import vis
 import numpy as np
 
@@ -151,6 +152,53 @@ def delete_component_indicies(original_hmm: GaussianHMM, zero_indices, verbose=F
 
     return new_hmm
 
+# reverse the fhmm proces to create an estimate of the added noise hmm, returns updated means
+def reverse_fhmm(hmm_noise: GaussianHMM, hmm_background: GaussianHMM, threshold=0):
+    noise_means = []
+    # assume noise was made up of max operation
+    for i in range(hmm_noise.n_components):
+        mean_i = hmm_noise.means_[i]
+        curr_mean = []
+        for j in range(hmm_background.n_components):
+            mean_n = np.zeros(len(mean_i))
+            mean_j = hmm_background.means_[j]
+            m_mask = (mean_i > mean_j + threshold)  # add threshold
+            m_mask_indicis = np.where(m_mask)
+            mean_n[m_mask_indicis] = mean_i[m_mask_indicis]
+            curr_mean.append(mean_n)
+        reduced_mean = np.maximum.reduce(curr_mean)
+        noise_means.append(reduced_mean)
+
+    new_noise_means = np.stack(noise_means)
+    zero_mask = np.where(new_noise_means == 0)
+    new_noise_means[zero_mask] = np.NINF
+    return new_noise_means
+
+def calculate_average(list_of_dicts):
+    result_dict = {}
+    dict_count = len(list_of_dicts)
+
+    if dict_count == 0:
+        return result_dict  # Return an empty dictionary if the input list is empty
+
+    # Iterate through each dictionary in the list
+    for data_dict in list_of_dicts:
+        # Iterate through each key-value pair in the dictionary
+        for key, value in data_dict.items():
+            # Check if the key is already present in the result_dict
+            if key in result_dict:
+                # If present, add the value to the running sum
+                result_dict[key] += value
+            else:
+                # If not present, initialize the key in the result_dict
+                result_dict[key] = value
+
+    # Calculate the average for each key
+    for key in result_dict.keys():
+        result_dict[key] /= dict_count
+
+    return result_dict
+
 # accuracy measures
 def perf_measure(y_actual, y_hat):
     TP = 0
@@ -188,17 +236,173 @@ def perf_measure(y_actual, y_hat):
 
     return_metrics = {
         'ACC': ACC,
-        'TPR': TPR,
-        'FPR': FPR,
-        'TNR': TNR,
         'PPV': PPV,
-        'NPV': NPV,
+        'TPR': TPR,
+        'TNR': TNR,
+        'FPR': FPR,
         'FNR': FNR,
-        'FDR': FDR
     }
 
     return return_metrics
 
+
+# average confusion matrice
+
+def get_average_cm(conf_matrices):
+
+    # Initialize a variable to store the sum of confusion matrices
+    sum_conf_matrix = np.zeros(conf_matrices[0].shape)
+
+    # Sum up all confusion matrices
+    for conf_matrix in conf_matrices:
+        sum_conf_matrix += conf_matrix
+
+    # Calculate the average confusion matrix
+    avg_conf_matrix = sum_conf_matrix / len(conf_matrices)
+
+    return avg_conf_matrix
+
+import numpy as np
+from sklearn.metrics import confusion_matrix
+
+def perf_measure_multi(y_actual, y_hat, avg_only=False):
+    # Initialize dictionaries to store metrics for each class
+    metrics_dict = {i: {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0} for i in set(y_actual)}
+    return_dict = {i: {} for i in set(y_actual)}
+
+    # Compute confusion matrix
+    conf_matrix = confusion_matrix(y_actual, y_hat)
+
+    for i in range(len(set(y_actual))):
+        for j in range(len(set(y_actual))):
+            if i == j:
+                metrics_dict[i]['TP'] = conf_matrix[i, j]
+            else:
+                metrics_dict[i]['FN'] += conf_matrix[i, j]
+                metrics_dict[j]['FP'] += conf_matrix[i, j]
+                metrics_dict[i]['TN'] += np.sum(conf_matrix) - np.sum(conf_matrix[i, :]) - np.sum(conf_matrix[:, j])
+
+    # Initialize variables for macro-average
+    macro_avg_dict = {'ACC': 0, 'PPV': 0, 'TPR': 0, 'TNR': 0, 'FPR': 0, 'FNR': 0}
+
+    # Compute metrics for each class
+    for i in metrics_dict:
+        TP = metrics_dict[i]['TP']
+        FP = metrics_dict[i]['FP']
+        TN = metrics_dict[i]['TN']
+        FN = metrics_dict[i]['FN']
+
+        # Sensitivity, hit rate, recall, or true positive rate
+        TPR = TP / (TP + FN)
+        # Specificity or true negative rate
+        TNR = TN / (TN + FP)
+        # Precision or positive predictive value
+        PPV = TP / (TP + FP)
+        # Negative predictive value
+        NPV = TN / (TN + FN)
+        # Fall out or false positive rate
+        FPR = FP / (FP + TN)
+        # False negative rate
+        FNR = FN / (TP + FN)
+        # False discovery rate
+        FDR = FP / (TP + FP)
+
+        # Overall accuracy
+        ACC = (TP + TN) / (TP + FP + FN + TN)
+
+        # Update macro-average variables
+        macro_avg_dict['ACC'] += ACC
+        macro_avg_dict['PPV'] += PPV
+        macro_avg_dict['TPR'] += TPR
+        macro_avg_dict['TNR'] += TNR
+        macro_avg_dict['FPR'] += FPR
+        macro_avg_dict['FNR'] += FNR
+
+        # Add metrics to the class-specific dictionary
+        metrics_dict[i].update({
+            'ACC': ACC,
+            'PPV': PPV,
+            'TPR': TPR,
+            'TNR': TNR,
+            'FPR': FPR,
+            'FNR': FNR,
+        })
+
+        return_dict[i].update({
+            'ACC': ACC,
+            'PPV': PPV,
+            'TPR': TPR,
+            'TNR': TNR,
+            'FPR': FPR,
+            'FNR': FNR,
+        })
+
+    # Calculate macro-average
+    num_classes = len(metrics_dict)
+    macro_avg_dict = {key: value / num_classes for key, value in macro_avg_dict.items()}
+
+    return_dict['macro_avg'] = macro_avg_dict
+
+    if avg_only:
+        return macro_avg_dict
+    else:
+        return return_dict
+
+
+
+def perf_measure_multi_all(y_actual, y_hat):
+    # Initialize dictionaries to store metrics for each class
+    metrics_dict = {i: {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0} for i in set(y_actual)}
+    return_dict = {i: {} for i in set(y_actual)}
+
+    # Compute confusion matrix
+    conf_matrix = confusion_matrix(y_actual, y_hat)
+
+    for i in range(len(set(y_actual))):
+        for j in range(len(set(y_actual))):
+            if i == j:
+                metrics_dict[i]['TP'] = conf_matrix[i, j]
+            else:
+                metrics_dict[i]['FN'] += conf_matrix[i, j]
+                metrics_dict[j]['FP'] += conf_matrix[i, j]
+                metrics_dict[i]['TN'] += np.sum(conf_matrix) - np.sum(conf_matrix[i, :]) - np.sum(conf_matrix[:, j])
+
+    # Compute metrics for each class
+    for i in metrics_dict:
+        TP = metrics_dict[i]['TP']
+        FP = metrics_dict[i]['FP']
+        TN = metrics_dict[i]['TN']
+        FN = metrics_dict[i]['FN']
+
+        # Sensitivity, hit rate, recall, or true positive rate
+        TPR = TP / (TP + FN)
+        # Specificity or true negative rate
+        TNR = TN / (TN + FP)
+        # Precision or positive predictive value
+        PPV = TP / (TP + FP)
+        # Negative predictive value
+        NPV = TN / (TN + FN)
+        # Fall out or false positive rate
+        FPR = FP / (FP + TN)
+        # False negative rate
+        FNR = FN / (TP + FN)
+        # False discovery rate
+        FDR = FP / (TP + FP)
+
+        # Overall accuracy
+        ACC = (TP + TN) / (TP + FP + FN + TN)
+
+        # Add metrics to the dictionary
+        metrics_dict[i].update({
+            'ACC': ACC,
+            'PPV': PPV,
+            'TPR': TPR,
+            'TNR': TNR,
+            'FPR': FPR,
+            'FNR': FNR,
+        })
+
+    return metrics_dict
 
 class SampleHolder:
     def __init__(self, samples, sample_labels, features=None, feature_labels=None):
@@ -244,7 +448,7 @@ def plot_spectrogram(features, true_labels, pred_labels, label_type, label_abr):
     pred_changes = find_label_changes(pred_labels)
 
     for index, label in true_changes:
-        t = plt.text(times[index + 8], frequencies[-7], label_abr[label], color='black', fontsize=10, verticalalignment='bottom')
+        t = plt.text(times[index], frequencies[-7], label_abr[label], color='black', fontsize=10, verticalalignment='bottom')
         t.set_bbox(dict(facecolor='white', alpha=0.8, edgecolor='red', linewidth=0))
         plt.vlines(times[index], ymin=freq_max / 2, ymax=freq_max, color='black', linestyles='dashed', linewidth=1)
 
@@ -262,8 +466,8 @@ def plot_spectrogram(features, true_labels, pred_labels, label_type, label_abr):
     plt.xlabel('T bin')
     legend_labels = [label_abr[label] + ' - ' + label_type[label].title() for label in label_type]
     plt.legend(legend_labels, loc='upper right', facecolor='white', framealpha=1, handlelength=0)
-    plt.colorbar(label='Intensity [dB]')
-    plt.title('Annotated Spectrogram')
+    # plt.colorbar(label='Intensity [dB]')
+    # plt.title('Annotated Spectrogram')
     plt.show()
 
 def smooth_labels(labels, window_size=50, step_size=10, diff_size=20):

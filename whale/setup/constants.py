@@ -31,6 +31,7 @@ BOWHEAD_LABELS_B = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/bow
 BOWHEAD_LABELS_B_NOISE = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/bowhead/B88041902_combined_noise.txt'
 
 BOWHEAD_LABELS_WHALE = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/bowhead/bowhead_labels_whale.txt'
+BOWHEAD_LABELS_TIGHT_WHALE = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/bowhead/tight/bowhead_labels_whale.txt'
 BOWHEAD_LABELS_NOISE = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/bowhead/bowhead_labels_noise.txt'
 
 # ____________________
@@ -41,9 +42,15 @@ HUMPBACK_WAV_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpb
 
 HUMPBACK_LABEL_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/940302-1222.txt'
 HUMPBACK_LABEL_A_NOISE = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/940302-1222-noise.txt'
+HUMPBACK_LABEL_A_NOISE_TIGHT = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/tight/noise.txt'
 
 SWOOPS_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/swoops.txt'
 LONG_SWOOPS_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/long-swoops.txt'
 HIGH_CALLS_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/high-calls.txt'
 HUMPBACK_LABEL_LOW_MOOS = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/low-moos.txt'
 HUMPBACK_LABEL_MOOS = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/moos.txt'
+
+# tight
+SWOOPS_TIGHT_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/tight/swoops.txt'
+HIGH_CALLS_TIGHT_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/tight/high-calls.txt'
+HUMPBACK_TIGHT_LABEL_MOOS = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/tight/moos.txt'

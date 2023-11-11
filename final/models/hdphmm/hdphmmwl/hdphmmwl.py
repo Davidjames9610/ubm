@@ -372,6 +372,28 @@ class HDPHMMWL():
 
         self.hmm = hmm
 
+    def hmm_from_trace(self, n_components, average_over=100):
+
+        # from the last 'average_over' its, get the sum
+        nk = np.copy(self.trace['nk'])[-average_over:]
+        nk_sum = np.sum(nk, axis=0)
+
+        largest_indices = np.argpartition(nk_sum, -n_components)[-n_components:]
+        # nk_sum_norm = (nk_sum / np.sum(nk_sum)) * 100
+
+        mu_matrix = np.mean(np.array(self.trace['mu'][-average_over:]), axis=0)[largest_indices]
+        sigma_matrix = np.mean(np.array(self.trace['covar'][-average_over:]), axis=0)[largest_indices]
+        A = np.mean(np.array(self.trace['A'][-average_over:]), axis=0)[largest_indices][:, largest_indices]
+        pi = np.mean(np.array(self.trace['pie'][-average_over:]), axis=0)[largest_indices]
+
+        hmm_trace = GaussianHMM(len(largest_indices), covariance_type='diag')
+        hmm_trace.n_features = mu_matrix.shape[1]
+        hmm_trace.transmat_, hmm_trace.startprob_, hmm_trace.means_ = self.normalize_matrix(
+            A), self.normalize_matrix(pi), mu_matrix
+        hmm_trace.covars_ = np.array([np.diag(i) for i in sigma_matrix])
+
+        return hmm_trace
+
     def get_likelihood(self):
         self.create_hmm()
         log_prob, _ = self.hmm.decode(self.X[:200])  # update this for multiple sequences ...
@@ -385,7 +407,34 @@ class HDPHMMWL():
         self.sample_A()
         self.sample_theta()
 
-    def fit_multiple(self, iterations=1, outer_its=10, verbose=False, burn_in=500):
+    def plot_components_trace(self):
+
+        data = self.trace['n_components_all']
+        # Define the window size for the rolling average
+        window_size = 20
+
+        # Create a kernel for the rolling average
+        kernel = np.ones(window_size) / window_size
+
+        # Use np.convolve to calculate the rolling average
+        rolling_avg = np.convolve(data, kernel, mode='valid')
+
+        # Create an array of indices corresponding to the original data for plotting
+        indices = np.arange(window_size - 1, len(data))
+
+        # Plot the data and rolling average
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(indices, data[window_size - 1:], label='Original Values', marker='o')
+        plt.plot(indices, rolling_avg, label=f'Rolling Average ({window_size} periods)',
+                 color='red', linestyle='--', marker='o')
+        plt.xlabel('Index')
+        plt.ylabel('Value')
+        plt.title('Rolling Average Plot')
+        plt.legend()
+        plt.show()
+
+    def fit_multiple(self, iterations=1, outer_its=10, verbose=False, simple_verbose=False, burn_in=500, new_list=None, return_hmm=False):
 
         # init trace
         self.trace['n_components'] = []
@@ -396,15 +445,22 @@ class HDPHMMWL():
         self.trace['mu'] = []
         self.trace['covar'] = []
         all_its = 0
+        converged = False
+
+        if new_list is not None:
+            self.X_list = new_list
 
         if iterations is not None:
             self.iterations = iterations
 
-        print('iterations per sample: ', self.iterations)
+        if verbose:
+            print('iterations per sample: ', self.iterations)
         start_time = time.time()
         for outer_it in range(outer_its):
+
             for i in range(len(self.X_list)):
-                print('Gibb sampling on sample index: ', i, 'outer it: ', outer_it)
+                if verbose:
+                    print('Gibb sampling on sample index: ', i, 'outer it: ', outer_it)
 
                 self.X = self.X_list[i]
                 self.N = self.X.shape[0]
@@ -439,51 +495,51 @@ class HDPHMMWL():
                         self.trace['mu'].append(np.copy(self.mu))
                         self.trace['covar'].append(np.copy(self.sigma))
 
-                    if verbose:
-                        if it % 10 == 0:
-                            cur_ll = self.get_likelihood()
-                            self.trace[LL].append(cur_ll)
+                    if it % 10 == 0:
+                        cur_ll = self.get_likelihood()
+                        self.trace[LL].append(cur_ll)
+                        if verbose:
                             print('it: ', it, ' || Likelihood: ', cur_ll, ' || n_components: ', self.hmm.n_components)
 
-                        if all_its % 50 == 0:
+                    if all_its % 50 == 0:
 
-                            data = self.trace['n_components_all']
-                            # Define the window size for the rolling average
-                            window_size = 20
+                        if verbose:
+                            self.plot_components_trace()
 
-                            # Create a kernel for the rolling average
-                            kernel = np.ones(window_size) / window_size
+                        last_50_mean = np.mean(self.trace['n_components_all'][-50:])
+                        last_50_std = np.std(self.trace['n_components_all'][-50:])
+                        if verbose:
+                            print(last_50_mean)
+                            print(last_50_std)
 
-                            # Use np.convolve to calculate the rolling average
-                            rolling_avg = np.convolve(data, kernel, mode='valid')
+                        if all_its > 100:
+                            last_100_mean = np.mean(self.trace['n_components_all'][-100:])
+                            last_100_std = np.std(self.trace['n_components_all'][-100:])
+                            if verbose or simple_verbose:
+                                print('its: ', all_its)
+                                print(last_100_mean)
+                                print(last_100_std)
 
-                            # Create an array of indices corresponding to the original data for plotting
-                            indices = np.arange(window_size - 1, len(data))
-
-                            # Plot the data and rolling average
-                            plt.figure(figsize=(10, 6))
-                            plt.plot(indices, data[window_size - 1:], label='Original Values', marker='o')
-                            plt.plot(indices, rolling_avg, label=f'Rolling Average ({window_size} periods)',
-                                     color='red', linestyle='--', marker='o')
-                            plt.xlabel('Index')
-                            plt.ylabel('Value')
-                            plt.title('Rolling Average Plot')
-                            plt.legend()
-                            plt.show()
-
-                            print(np.mean(self.trace['n_components_all'][-50:]))
-                            print(np.std(self.trace['n_components_all'][-50:]))
-
-                            if all_its > 100:
-                                print(np.mean(self.trace['n_components_all'][-100:]))
-                                print(np.std(self.trace['n_components_all'][-100:]))
-
+                            if np.isclose(last_50_mean, last_100_mean, 0.005):
+                                print('conditions met gibbs sampling complete')
+                                converged = True
+                                break
 
                         # if it % 100 == 0 and it > 0:
                         #     plot_hmm_learn(self.X, self.hmm, feature_a=self.feature_a, feature_b=self.feature_b)
+                if converged:
+                    break
+            if converged:
+                break
+
 
         end_time = time.time()
         print('completed gibbs sampling in ', end_time - start_time)
+
+        if return_hmm:
+            # set amount of components from trace
+            n_comps = int(np.round(np.mean(self.trace['n_components_all'][-50:])))
+            return self.hmm_from_trace(n_comps, 100)
 
     def check_for_close_states(self, js_threshold=-2):
         self.create_hmm()  # update hmm

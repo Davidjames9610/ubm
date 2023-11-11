@@ -1,3 +1,5 @@
+import itertools
+
 import seaborn as sns;
 from sklearn import mixture
 
@@ -191,6 +193,7 @@ class GMMGibbsSampler():
                 self.x_bar[k] = self.X[random_idx]
 
         return self.pi, self.mu, self.sigma
+
 
 # my_gibbs = GMMGibbsSampler(x_i, 3, )
 # np.sum(my_gibbs.Z == 0)

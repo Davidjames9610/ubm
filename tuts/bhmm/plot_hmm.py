@@ -7,7 +7,7 @@ def plot_ellipse(ax, mu, sigma, color="b"):
     x, y = vecs[:, 0]
     theta = np.degrees(np.arctan2(y, x))
     w, h = 2 * np.sqrt(vals)
-    ellipse = Ellipse(mu, w, h, theta, color=color, edgecolor='black')  # edgecolor for better visibility
+    ellipse = Ellipse(mu, w, h, theta, facecolor=color, edgecolor='black')  # edgecolor for better visibility
     ellipse.set_clip_box(ax.bbox)
     ellipse.set_alpha(0.2)
     ellipse = ax.add_artist(ellipse)
