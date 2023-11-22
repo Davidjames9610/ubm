@@ -54,3 +54,6 @@ HUMPBACK_LABEL_MOOS = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/
 SWOOPS_TIGHT_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/tight/swoops.txt'
 HIGH_CALLS_TIGHT_LABELS_A = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/tight/high-calls.txt'
 HUMPBACK_TIGHT_LABEL_MOOS = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/tight/moos.txt'
+
+# time domain
+HUMPBACK_LABEL_SWOOPS_TIME_DOMAIN = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/timedomain/swoops.txt'

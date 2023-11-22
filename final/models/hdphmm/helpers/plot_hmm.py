@@ -81,7 +81,7 @@ def plot_hmm_data(data, ss, k, means, covars, counts=None, percent=10, feature_a
 
     fig, ax = plt.subplots()
 
-    plt.scatter(data[:, feature_a], data[:, feature_b], c=colors_z, marker='o')
+    plt.scatter(data[:, feature_a], data[:, feature_b], c=colors_z, marker='o', alpha=0.5)
 
     for state in range(k):
         state_mean = np.array([means[state][feature_a], means[state][feature_b]])

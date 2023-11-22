@@ -31,13 +31,14 @@ def plot_hmm_data(data, ss, k, means, covars):
     colors_z = [state_color_mapping[state] for state in ss]
 
     # Scatter plot
-    plt.scatter(data[:, 0], data[:, 1], c=colors_z, cmap='viridis', marker='o')
+    plt.scatter(data[:, 0], data[:, 1], c=colors_z, marker='o')
 
     for state in range(k):
         state_data = data[ss == state]
-        state_mean = means[state]
-        state_cov = covars[state]
-        plot_ellipse(plt.gca(), state_mean, state_cov, color=state_color_mapping[state])
+        if len(state_data) > 0:
+            state_mean = means[state]
+            state_cov = covars[state]
+            plot_ellipse(plt.gca(), state_mean, state_cov, color=state_color_mapping[state])
 
     # Add labels and title
     plt.xlabel('Feature 1')

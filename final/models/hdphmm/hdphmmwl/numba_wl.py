@@ -170,24 +170,29 @@ def compute_probabilities(log_probabilities):
     :param log_probabilities: log likelihood vector
     :return: probability vector
     """
-    if np.sum(np.exp(log_probabilities)) == 0:
-        max = np.amax(log_probabilities)
-        log_probabilities = log_probabilities - max
-        valid_probabilities = np.empty(0)
-        for i in range(len(log_probabilities)):
-            if log_probabilities[i] > -38:
-                valid_probabilities = np.append(valid_probabilities,
-                                                np.exp(log_probabilities[i]))  # append likelihood, not log likelihood
-            else:
-                valid_probabilities = np.append(valid_probabilities, 0)
-
-        return valid_probabilities / np.sum(valid_probabilities)
+    if np.any(log_probabilities > 100):
+        return get_valid_probabilities(log_probabilities)
+    elif np.sum(np.exp(log_probabilities)) == 0:
+        return get_valid_probabilities(log_probabilities)
     else:
         probabilities = np.exp(log_probabilities) / np.sum(np.exp(log_probabilities))  # make probs add up to 1
         if np.sum(probabilities) == 1 or np.isclose(np.sum(probabilities), 1, 0.001):
             return probabilities
         else:
             raise ValueError("np.sum(probabilities) != 1")
+
+def get_valid_probabilities(log_probabilities):
+    max = np.amax(log_probabilities)
+    log_probabilities = log_probabilities - max
+    valid_probabilities = np.empty(0)
+    for i in range(len(log_probabilities)):
+        if log_probabilities[i] > -38:
+            valid_probabilities = np.append(valid_probabilities,
+                                            np.exp(log_probabilities[i]))  # append likelihood, not log likelihood
+        else:
+            valid_probabilities = np.append(valid_probabilities, 0)
+
+    return valid_probabilities / np.sum(valid_probabilities)
 
 
 @jit(nopython=True)
