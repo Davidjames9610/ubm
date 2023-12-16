@@ -17,7 +17,8 @@ from final.useful import *
 
 class BayesianHMM:
 
-    def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20, alpha0=1000, kappa0=10, verbose=False, outer_its=1):
+    def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20, alpha0=1000, kappa0=10, verbose=False, outer_its=1,
+                 convergence_check=200, V0=None):
         """
         [] input
         X = data n x d
@@ -88,7 +89,7 @@ class BayesianHMM:
         self.true_covars_ = [np.cov(self.X[kmeans.labels_ == i], rowvar=False) for i in range(K)]
 
         # shuffle labels
-        num_labels_to_replace = int(0.5 * len(kmeans.labels_))
+        num_labels_to_replace = int(0.1 * len(kmeans.labels_))
         # Generate random labels between 0 and k
         random_labels = np.random.randint(0, K, num_labels_to_replace)
         # Replace 10% of the labels with random numbers
@@ -120,16 +121,22 @@ class BayesianHMM:
             sig_bar = np.cov(x_k.T, bias=True)
             diagsig[k] = np.diag(np.diag(sig_bar))
             self.mu[k] = self.x_bar[k]
-            self.sigma[k] = sig_bar
+            self.sigma[k] = np.diag(np.diag(sig_bar))
             self.lambdas[k] = np.linalg.inv(sig_bar)
 
         # sig_bar = np.cov(self.X.T, bias=True)
-        self.S0 = diagsig
+        universal_sig_bar = np.cov(self.X.T, bias=True)
+        self.S0 = np.diag(np.diag(universal_sig_bar))
+        max_S0 = np.max(self.S0)
         # Hyper-parameters for normals
         # Mu
-        self.m0 = np.copy(self.x_bar)
+        self.m0 = np.mean(self.X, axis=0)
         # self.m0 = np.mean(self.X, axis=0)  # 1 x D
-        self.V0 = np.eye(self.D) * self.get_magnitude(self.S0[0, 0, 0])
+        if V0:
+            self.V0 = V0
+        else:
+            self.V0 = np.eye(self.D) * self.get_magnitude(max_S0)
+
         self.nu0 = np.copy(self.D) + 2  # 1 Degrees of freedom IW
 
         self.mu_trace = []
@@ -139,7 +146,8 @@ class BayesianHMM:
         self.ARI = np.zeros((self.iterations))
         self.likelihood_history = []
         self.verbose = verbose
-
+        self.convergence_check = convergence_check
+        self.hmm: GaussianHMM | None = None
 
     @staticmethod
     def get_magnitude(number):
@@ -148,7 +156,7 @@ class BayesianHMM:
             return 0
 
         # Calculate the magnitude using the logarithm
-        magnitude = int(math.floor(math.log10(abs(number)))) + 1
+        magnitude = int(math.floor(math.log10(abs(number))))
 
         # Adjust the result to match the scientific notation format
         return 10 ** magnitude
@@ -200,15 +208,12 @@ class BayesianHMM:
         self.trace['pie'] = []
         self.trace['mu'] = []
         self.trace['covar'] = []
+        self.trace['time'] = 0
 
         converged = False
-
         total_its = 0
-
         current_component_count = self.K
-
         self.ARI = np.zeros(self.iterations)
-
         start_time = time.time()
 
         for outer_it in range(self.outer_its):
@@ -244,8 +249,10 @@ class BayesianHMM:
                             ll = curr_hmm.score(self.X)
                             self.likelihood_history.append(ll)
                         print('it: ', total_its, 'score: ',ll, 'n-components: ', self.K)
+                        print('\n')
+                        print(self.nk)
 
-                    if total_its % 400 == 0:
+                    if total_its % self.convergence_check == 0:
                         # check for convergence
                         if current_component_count == self.K:
                             print('convergence criteria met!')
@@ -265,12 +272,16 @@ class BayesianHMM:
                 break
         end_time = time.time()
 
+        self.trace['time'] = end_time - start_time
+
         print('Completed gibbs sampling -- Convergence: ', converged, ' -- In: ', end_time - start_time)
 
         if converged:
-            return self.hmm_from_trace(self.K, 100)
+            self.hmm = self.hmm_from_trace(self.K, 100)
+            return self.hmm
         else:
-            return self.hmm_from_trace(self.K, 1)
+            self.hmm = self.hmm_from_trace(self.K, 1)
+            return self.hmm
 
     def sample_theta(self):
         # [1] sample params using assignments
@@ -280,7 +291,7 @@ class BayesianHMM:
                 # mu
                 Vk = (np.linalg.inv(np.linalg.inv(self.V0) + self.nk[k] * np.linalg.inv(self.sigma[k])))
                 term1 = np.dot(np.linalg.inv(self.sigma[k]), self.nk[k] * self.x_bar[k])
-                term2 = np.dot(np.linalg.inv(self.V0), self.m0[k])
+                term2 = np.dot(np.linalg.inv(self.V0), self.m0)
                 mk = (np.dot(Vk, term1 + term2))
                 Vk = np.diag(np.diag(Vk))
                 # sample mu
@@ -292,7 +303,7 @@ class BayesianHMM:
 
                 # sigma
                 dif = (self.X[self.Z == k] - self.mu[k])
-                Sk = (self.S0[k] + (np.dot(dif.T, dif)))
+                Sk = (self.S0 + (np.dot(dif.T, dif)))
                 nuk = self.nu0 + self.nk[k]
 
                 Sk = np.diag(np.diag(Sk))
@@ -356,8 +367,8 @@ class BayesianHMM:
             self.nk = self.nk[rem_ind]
             self.x_bar = self.x_bar[rem_ind]
 
-            self.S0 = self.S0[rem_ind]
-            self.m0 = self.m0[rem_ind]
+            self.S0 = self.S0
+            self.m0 = self.m0
 
             self.K = len(rem_ind)
 

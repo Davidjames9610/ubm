@@ -1,3 +1,6 @@
+import math
+from random import random
+
 from hmmlearn.hmm import GaussianHMM
 from sklearn.cluster import KMeans
 from scipy.stats import dirichlet, invwishart
@@ -19,8 +22,8 @@ import matplotlib.pyplot as plt
 
 
 class HDPHMMWL():
-    def __init__(self, X_list, K, Z_true=None, burn_in=0, iterations=20, sbp=None,
-                 decode_length=200, feature_a=0, feature_b=1):
+    def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20, sbp=None,
+                 feature_a=0, feature_b=1, outer_its=1, convergence_check=100, max_it=1000):
         """
         [] input
         X_list = list of X
@@ -48,10 +51,21 @@ class HDPHMMWL():
         nk - count of data in each k
         x_bar - mean of data in each k
         """
-        self.X_list = X_list
-        self.X = X_list[0]  # data n x d
+
+        if isinstance(X, list):
+            print('multiple sequences given')
+            self.X_list = X
+            self.X = X[0]  # init to first sequence
+            self.outer_its = outer_its
+        else:
+            print('single sequence given')
+            self.X_list = [X]
+            self.X = X
+            self.outer_its = 1
+
         self.K = K  # expected / weak limit no of states
         self.burn_in = burn_in
+        self.max_it = max_it
         self.iterations = iterations
         self.N = self.X.shape[0]  # length of data
         self.D = self.X.shape[1]  # dimension of data
@@ -99,10 +113,11 @@ class HDPHMMWL():
         self.likelihood_history = []
 
         self.hmm = None
-        self.decode_length = decode_length
 
         self.feature_a = feature_a
         self.feature_b = feature_b
+
+        self.convergence_check = convergence_check
 
     def init_z(self):
 
@@ -114,7 +129,7 @@ class HDPHMMWL():
         kmeans.fit(self.X)
 
         # shuffle labels
-        num_labels_to_replace = int(0.5 * len(kmeans.labels_))
+        num_labels_to_replace = int(0.1 * len(kmeans.labels_))
         # Generate random labels between 0 and k
         random_labels = np.random.randint(0, self.K, num_labels_to_replace)
         # Replace 10% of the labels with random numbers
@@ -151,13 +166,28 @@ class HDPHMMWL():
 
         # Hyper-parameters for normals
         # Mu
-        self.m0 = np.copy(self.x_bar)  # K x D
-        if np.isnan(self.m0).any():
-            print('nan')
-        self.V0 = np.eye(self.D) * 1000  # D x D
+        self.m0 = np.mean(self.X, axis=0)
+        # if np.isnan(self.m0).any():
+        #     print('nan')
         # Sigma
-        self.S0 = diagsig  # K x D x D
+        uni_sig_bar = np.cov(self.X.T, bias=True)
+
+        self.S0 = np.diag(np.diag(uni_sig_bar))
+
+        self.V0 = np.eye(self.D) * 1000 # self.S0 # np.eye(self.D) * 1 # self.get_magnitude(np.max(self.S0)) # np.diag(np.diag(np.cov(self.X.T, bias=True)))
         self.nu0 = np.copy(self.D) + 2  # 1 Degrees of freedom IW
+
+    @staticmethod
+    def get_magnitude(number):
+        # Handle the case where the number is 0 separately
+        if number == 0:
+            return 0
+
+        # Calculate the magnitude using the logarithm
+        magnitude = int(math.floor(math.log10(abs(number))))
+
+        # Adjust the result to match the scientific notation format
+        return 10 ** magnitude
 
     def init_sbp(self):
 
@@ -166,12 +196,12 @@ class HDPHMMWL():
             self.gamma0 = self.sbp[GAMMA0]  # concentration parameter for stick breaking
             self.kappa0 = self.sbp[KAPPA0]  # sticky-ness
             self.alpha0 = self.sbp[ALPHA0]  # concentration for 2nd stick breaking
-            self.rho0 = self.sbp[RHO0]  # self.kappa0/(self.kappa0+self.alpha0)
         else:
-            self.gamma0 = 50  # concentration parameter for stick breaking
-            self.kappa0 = 0.5  # sticky-ness
-            self.alpha0 = 100  # concentration for 2nd stick breaking
-            self.kappa0 = self.kappa0 / (self.kappa0 + self.alpha0)
+            self.gamma0 = 2  # concentration parameter for stick breaking
+            self.kappa0 = 10  # sticky-ness
+            self.alpha0 = 0.5  # concentration for 2nd stick breaking
+
+        self.rho0 = self.kappa0 / (self.kappa0 + self.alpha0)
 
         gem_a = np.ones(self.K) * (self.gamma0 / self.K)  # GEM 1
         gem_a[gem_a < 0.01] = 0.01
@@ -318,7 +348,7 @@ class HDPHMMWL():
                 # mu
                 Vk = (np.linalg.inv(np.linalg.inv(self.V0) + self.nk[k] * np.linalg.inv(self.sigma[k])))
                 term1 = np.dot(np.linalg.inv(self.sigma[k]), self.nk[k] * self.x_bar[k])
-                term2 = np.dot(np.linalg.inv(self.V0), self.m0[k])
+                term2 = np.dot(np.linalg.inv(self.V0), self.m0)
                 mk = (np.dot(Vk, term1 + term2))
                 if is_symmetric_positive_semidefinite(Vk) is not True:
                     Vk = np.diag(np.diag(Vk))
@@ -331,7 +361,7 @@ class HDPHMMWL():
 
                 # sigma
                 dif = (self.X[self.Z == k] - self.mu[k])
-                Sk = (self.S0[k] + (np.dot(dif.T, dif)))
+                Sk = (self.S0 + (np.dot(dif.T, dif)))
                 nuk = self.nu0 + self.nk[k]
 
                 if is_symmetric_positive_semidefinite(Sk) is not True:
@@ -434,7 +464,9 @@ class HDPHMMWL():
         plt.legend()
         plt.show()
 
-    def fit_multiple(self, iterations=1, outer_its=10, verbose=False, simple_verbose=False, burn_in=500, new_list=None, return_hmm=False):
+    def fit_multiple(self, verbose=False):
+
+        print('starting gibbs sampling')
 
         # init trace
         self.trace['n_components'] = []
@@ -444,33 +476,36 @@ class HDPHMMWL():
         self.trace['pie'] = []
         self.trace['mu'] = []
         self.trace['covar'] = []
-        all_its = 0
+        self.trace[TIME] = []
+        self.trace[LL] = []
+
         converged = False
-
-        if new_list is not None:
-            self.X_list = new_list
-
-        if iterations is not None:
-            self.iterations = iterations
-
-        if verbose:
-            print('iterations per sample: ', self.iterations)
+        total_its = 0
+        current_component_count = self.K
+        imbetween_component_count = self.K + 1
+        self.ARI = np.zeros(self.iterations)
         start_time = time.time()
-        for outer_it in range(outer_its):
+        chunk_length = 200
+        chunk = False
+        if len(self.X_list) == 1 and len(self.X) > 500:
+            chunk = True
+
+        for outer_it in range(self.outer_its):
 
             for i in range(len(self.X_list)):
-                if verbose:
-                    print('Gibb sampling on sample index: ', i, 'outer it: ', outer_it)
 
                 self.X = self.X_list[i]
                 self.N = self.X.shape[0]
 
-                self.trace[TIME] = []
-                self.trace[LL] = []
-                self.ARI = np.zeros(self.iterations)
-
                 for it in range(self.iterations):
-                    all_its += 1
+                    # chunk
+                    if chunk:
+                        start_position = np.random.randint(0, self.X_list[0].shape[0] - chunk_length)
+                        # Extract chunk from the concatenated sequence
+                        self.X = self.X_list[0][start_position: start_position + chunk_length, :]
+                        self.N = self.X.shape[0]
+
+                    total_its += 1
                     start_time_gibbs = time.time()
                     self.gibbs_sweep()
                     end_time_gibbs = time.time()
@@ -485,9 +520,11 @@ class HDPHMMWL():
                     for k in range(self.K):
                         cur_nk[k] = np.sum(self.Z == k)
                     zero_indices = np.where(cur_nk > 0)[0]
+                    n_components = len(zero_indices.astype(int))
+
                     self.trace['n_components_all'].append(len(zero_indices))
 
-                    if all_its > burn_in - 1:
+                    if total_its > self.burn_in - 1:
                         self.trace['n_components'].append(len(zero_indices))
                         self.trace['nk'].append(cur_nk)
                         self.trace['A'].append(np.copy(self.A))
@@ -495,51 +532,40 @@ class HDPHMMWL():
                         self.trace['mu'].append(np.copy(self.mu))
                         self.trace['covar'].append(np.copy(self.sigma))
 
-                    if it % 10 == 0:
+                    if it % 50 == 0 and verbose:
                         cur_ll = self.get_likelihood()
                         self.trace[LL].append(cur_ll)
-                        if verbose:
-                            print('it: ', it, ' || Likelihood: ', cur_ll, ' || n_components: ', self.hmm.n_components)
+                        if verbose: print('it: ', total_its, ' || Likelihood: ', cur_ll, ' || n_components: ', n_components)
 
-                    if all_its % 50 == 0:
+                    # if total_its % 100 == 0 and verbose: self.plot_components_trace()
 
-                        if verbose:
-                            self.plot_components_trace()
+                    if total_its % self.convergence_check == 0:
+                        # check for convergence
+                        if current_component_count == n_components and imbetween_component_count == current_component_count:
+                            print('convergence criteria met!')
+                            converged = True
+                            break
+                        else:
+                            current_component_count = n_components
 
-                        last_50_mean = np.mean(self.trace['n_components_all'][-50:])
-                        last_50_std = np.std(self.trace['n_components_all'][-50:])
-                        if verbose:
-                            print(last_50_mean)
-                            print(last_50_std)
+                    if total_its % np.round(self.convergence_check/2) == 0:
+                        imbetween_component_count = n_components
 
-                        if all_its > 100:
-                            last_100_mean = np.mean(self.trace['n_components_all'][-100:])
-                            last_100_std = np.std(self.trace['n_components_all'][-100:])
-                            if verbose or simple_verbose:
-                                print('its: ', all_its)
-                                print(last_100_mean)
-                                print(last_100_std)
-
-                            if np.isclose(last_50_mean, last_100_mean, 0.005):
-                                print('conditions met gibbs sampling complete')
-                                converged = True
-                                break
-
-                        # if it % 100 == 0 and it > 0:
-                        #     plot_hmm_learn(self.X, self.hmm, feature_a=self.feature_a, feature_b=self.feature_b)
+                    if total_its == self.max_it:
+                        print('max it met!')
+                        converged = True
+                        break
                 if converged:
                     break
             if converged:
                 break
 
-
         end_time = time.time()
         print('completed gibbs sampling in ', end_time - start_time)
 
-        if return_hmm:
-            # set amount of components from trace
-            n_comps = int(np.round(np.mean(self.trace['n_components_all'][-50:])))
-            return self.hmm_from_trace(n_comps, 100)
+        # set amount of components from trace
+        n_comps = int(np.round(np.mean(self.trace['n_components_all'][-50:])))
+        return self.hmm_from_trace(n_comps, 100)
 
     def check_for_close_states(self, js_threshold=-2):
         self.create_hmm()  # update hmm

@@ -9,13 +9,17 @@ from final.models.hdphmm.hdphmmda.hdp_hmm_da_utils.hdp_hmm_da_consts import *
 from sklearn.cluster import KMeans
 from scipy.stats import dirichlet, beta
 from sklearn.metrics.cluster import adjusted_rand_score as ari
+
+from final.models.hdphmm.helpers import plot_hmm
 from final.models.hdphmm.helpers.plot_hmm import plot_hmm_data
 from numpy.random import binomial
 from final.models.hdphmm.hdphmmda.hdp_hmm_da_utils.utils import *
 from final.models.hdphmm.hdphmmwl.numba_wl import compute_probabilities, multinomial
 
+
 class InfiniteDirectSamplerHMM():
-    def __init__(self, X, K, Z_true, burn_in=0, iterations=20, verbose=False, sbp=None, temp=1):
+    def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20,
+                 verbose=False, sbp=None, temp=1, outer_its=1, convergence_check=200, max_its=1000):
         """
         Initializes the Infinite Direct Sampler Hidden Markov Model.
 
@@ -70,13 +74,24 @@ class InfiniteDirectSamplerHMM():
                 - pie_trace: List.
         """
 
+        if isinstance(X, list):
+            print('multiple sequences given')
+            self.X_list = X
+            self.X = X[0]  # init to first sequence
+            self.outer_its = outer_its
+        else:
+            print('single sequence given')
+            self.X_list = [X]
+            self.X = X
+            self.outer_its = 1
+
+        self.max_its = max_its
         self.verbose = verbose
-        self.X = X  # data n x d
         self.K = K  # current number of states
         self.burn_in = burn_in
         self.iterations = iterations
-        self.N = X.shape[0]     # length of data
-        self.D = X.shape[1]     # dimension of data
+        self.N = self.X.shape[0]  # length of data
+        self.D = self.X.shape[1]  # dimension of data
         self.Z = None
         self.Z_true = Z_true
         self.hmm = GaussianHMM(n_components=self.K, covariance_type="full")
@@ -84,6 +99,7 @@ class InfiniteDirectSamplerHMM():
         self.sbp_prior = sbp
         self.temp = temp
         self.tiny = 1e-300
+        self.convergence_check = convergence_check
 
         self.giw = {
             # M0: None,
@@ -131,8 +147,7 @@ class InfiniteDirectSamplerHMM():
         self.update_ss(True)
         _ = self.get_hmm()
 
-
-# [1] Init -------------------------------------------------------
+    # [1] Init -------------------------------------------------------
     def init_sbp(self):
 
         # could also init with priors if sampling these too
@@ -141,13 +156,12 @@ class InfiniteDirectSamplerHMM():
             self.sbp[GAMMA0] = self.sbp_prior[GAMMA0]
             self.sbp[KAPPA0] = self.sbp_prior[KAPPA0]
             self.sbp[ALPHA0] = self.sbp_prior[ALPHA0]
-            self.sbp[RHO0]= self.sbp_prior[RHO0]
+            self.sbp[RHO0] = self.sbp_prior[RHO0]
         else:
-            self.sbp[GAMMA0] = 1           # 2.0 init gem
-            self.sbp[KAPPA0] = 50          # 50 sticky-ness
-            self.sbp[ALPHA0] = 2         # 50 concentration for 2nd stick breaking
-            self.sbp[RHO0]= self.sbp[KAPPA0]/(self.sbp[KAPPA0]+self.sbp[ALPHA0]) # 0.5
-
+            self.sbp[GAMMA0] = 2  # 2.0 init gem
+            self.sbp[KAPPA0] = 10  # 50 sticky-ness
+            self.sbp[ALPHA0] = 0.5  # 50 concentration for 2nd stick breaking
+            self.sbp[RHO0] = self.sbp[KAPPA0] / (self.sbp[KAPPA0] + self.sbp[ALPHA0])  # 0.5
 
         # inits beta vec
         beta_vec = dirichlet.rvs(np.array([1, self.sbp[GAMMA0]]), size=1)[0]
@@ -156,8 +170,8 @@ class InfiniteDirectSamplerHMM():
 
         for k in range(self.K - 1):
             b = beta.rvs(1, self.sbp[GAMMA0], size=1)
-            beta_vec = np.hstack((beta_vec, b*beta_new))
-            beta_new = (1-b)*beta_new
+            beta_vec = np.hstack((beta_vec, b * beta_new))
+            beta_new = (1 - b) * beta_new
 
         self.sbp[BETA_VEC] = beta_vec
         self.sbp[BETA_NEW] = beta_new
@@ -171,7 +185,7 @@ class InfiniteDirectSamplerHMM():
         kmeans.fit(self.X)
 
         # shuffle labels
-        num_labels_to_replace = int(0.5 * len(kmeans.labels_))
+        num_labels_to_replace = int(0.1 * len(kmeans.labels_))
         # Generate random labels between 0 and k
         random_labels = np.random.randint(0, self.K, num_labels_to_replace)
         # Replace 10% of the labels with random numbers
@@ -187,30 +201,31 @@ class InfiniteDirectSamplerHMM():
 
         sig_bar = np.cov(self.X.T, bias=True)
         diagsig = np.diag(np.diag(sig_bar))
-        self.giw[M0] = np.mean(self.X, axis = 0)
-        self.giw[K0] = 0.1
-        self.giw[S0] = np.eye(self.D, self.D) * 10 # diagsig   #
+        self.giw[M0] = np.mean(self.X, axis=0)
+        self.giw[K0] = 1
+        self.giw[S0] = diagsig  #
         self.giw[NU0] = np.copy(self.D) + 2  # 1 Degrees of freedom IW, nu0 + 2 will mean <sigma> = S0
 
-        self.aux[M_MAT] = np.zeros((self.K,self.K))
-        self.aux[M_MAT_BAR] = np.zeros((self.K,self.K))
+        self.aux[M_MAT] = np.zeros((self.K, self.K))
+        self.aux[M_MAT_BAR] = np.zeros((self.K, self.K))
         self.aux[W_VEC] = np.zeros(self.K)
         self.aux[M_INIT] = None
 
-# [2] Gibbs sampling -------------------------------------------------------
+    # [2] Gibbs sampling -------------------------------------------------------
 
     def student_t_post_test(self, x):
         probs = np.zeros(self.K)
         for k in range(self.K):
             if self.ss[NK][k] > 0:
-                probs[k] = multivariate_students_t_numba(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0], self.D)
+                probs[k] = multivariate_students_t_numba(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0],
+                                                         self.D)
             else:
-                probs[k] = multivariate_students_t_numba(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0], self.D)
+                probs[k] = multivariate_students_t_numba(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0],
+                                                         self.D)
         x_dist_new = multivariate_students_t_numba(x, self.giw[M0], self.giw[K0], self.giw[NU0], self.giw[S0], self.D)
         return probs, x_dist_new
 
-
-# [2.a] Sampling Z ---------------------------------------------------------
+    # [2.a] Sampling Z ---------------------------------------------------------
     # predictive prob of x belonging to params of NIW
     def student_t_post(self, x):
         k0 = self.giw[K0]
@@ -221,8 +236,8 @@ class InfiniteDirectSamplerHMM():
         Sc = np.diag(np.diag(s0 + (np.outer(m0, m0) * k0)))
 
         outer_c = np.zeros((self.N, self.D, self.D))
-        for i in range(self.N):
-            outer_c[i, :, :] = np.outer(self.X[i], self.X[i])
+        for n in range(self.N):
+            outer_c[n, :, :] = np.outer(self.X[n], self.X[n])
 
         index_of_x = np.where(self.X == x)[0][0]
         class_of_x = self.Z[index_of_x]
@@ -236,11 +251,13 @@ class InfiniteDirectSamplerHMM():
                 mc = (k0 * m0) / kn
 
                 # calculate Sx
-                Sx = np.sum(outer_c[self.Z == k], axis=0) # - move out
+                if (outer_c.shape[0] != self.N) or (len(self.Z) != self.N):
+                    print('warning')
+                Sx = np.sum(outer_c[self.Z == k], axis=0)  # - move out
 
                 # mn
                 # mn_top_a = (self.nk[k] * self.x_bar[k])
-                mn_top_b = np.sum(self.X[self.Z == k], axis = 0)
+                mn_top_b = np.sum(self.X[self.Z == k], axis=0)
                 mn = mc + mn_top_b / kn
 
                 # Sn
@@ -269,37 +286,38 @@ class InfiniteDirectSamplerHMM():
         n_mat = np.copy(self.ss[N_MAT])
 
         tmp_vec = np.arange(self.K)
-        j = self.Z[t-1]
+        j = self.Z[t - 1]
 
         if t < self.N - 1:
 
-            l = self.Z[t+1]
+            l = self.Z[t + 1]
 
             zt_dist = \
-                (alpha0*beta_vec + n_mat[j]+kappa0*(j==tmp_vec))\
-                /(alpha0 + n_mat[j].sum()+kappa0)
+                (alpha0 * beta_vec + n_mat[j] + kappa0 * (j == tmp_vec)) \
+                / (alpha0 + n_mat[j].sum() + kappa0)
 
             ztplus1_dist = \
-                (alpha0*beta_vec[l] + n_mat[:,l] + kappa0*(l == tmp_vec) + (j==l)*(j == tmp_vec))\
-                /(alpha0 + n_mat.sum(axis=1) + kappa0+(j == tmp_vec))
+                (alpha0 * beta_vec[l] + n_mat[:, l] + kappa0 * (l == tmp_vec) + (j == l) * (j == tmp_vec)) \
+                / (alpha0 + n_mat.sum(axis=1) + kappa0 + (j == tmp_vec))
 
             new_dist = \
-                (alpha0**2)*beta_vec[l]*beta_new\
-                /((alpha0+kappa0)*(alpha0+n_mat[j].sum()+kappa0))
+                (alpha0 ** 2) * beta_vec[l] * beta_new \
+                / ((alpha0 + kappa0) * (alpha0 + n_mat[j].sum() + kappa0))
 
-            return_value = np.log((zt_dist*ztplus1_dist) + self.tiny), np.log(new_dist + self.tiny)
+            return_value = np.log((zt_dist * ztplus1_dist) + self.tiny), np.log(new_dist + self.tiny)
             return return_value
         else:
 
             zt_dist = \
-                (alpha0*beta_vec + n_mat[j]+kappa0*(j==tmp_vec))\
-                /(alpha0 +n_mat[j].sum()+kappa0)
+                (alpha0 * beta_vec + n_mat[j] + kappa0 * (j == tmp_vec)) \
+                / (alpha0 + n_mat[j].sum() + kappa0)
 
             new_dist = \
-                alpha0*beta_new\
-                /(alpha0+n_mat[j].sum()+kappa0)
+                alpha0 * beta_new \
+                / (alpha0 + n_mat[j].sum() + kappa0)
 
             return np.log(zt_dist + self.tiny), np.log(new_dist + self.tiny)
+
     @staticmethod
     def boltzmann_softmax(logits, temperature=1.0, small_amount=1e-5):
         exp_logits = np.exp(logits / temperature) + small_amount
@@ -308,7 +326,7 @@ class InfiniteDirectSamplerHMM():
 
     def sample_z(self):
 
-        s = time.time()
+        # s = time.time()
 
         for t in range(1, self.N):
             # remove current assignment of z_t from stats and counts
@@ -317,24 +335,24 @@ class InfiniteDirectSamplerHMM():
             self.remove_x_from_z(t, x)
 
             # log prob of CRF
-            start = time.time()
+            # start = time.time()
             zt_dist, zt_dist_new = self.get_crf_prob(t)
-            end = time.time()
-            print('self.get_crf_prob(t)', end - start)
+            # end = time.time()
+            # print('self.get_crf_prob(t)', end - start)
 
             # log prob of x | hyper-params
-            start = time.time()
+            # start = time.time()
             x_dist, x_dist_new = self.student_t_post(x)
-            end = time.time()
-            print('self.student_t_post(x)', end - start)
+            # end = time.time()
+            # print('self.student_t_post(x)', end - start)
 
-            start = time.time()
-            _,_ = self.student_t_post_test(x)
-            end = time.time()
-            print('self.student_t_post_test(x)', end - start)
+            # start = time.time()
+            # _,_ = self.student_t_post_test(x)
+            # end = time.time()
+            # print('self.student_t_post_test(x)', end - start)
 
             # sample z
-            post_cases = np.hstack((zt_dist+x_dist, zt_dist_new+x_dist_new))
+            post_cases = np.hstack((zt_dist + x_dist, zt_dist_new + x_dist_new))
 
             post_cases_probs = compute_probabilities(post_cases)
             self.Z[t] = multinomial(post_cases_probs)
@@ -344,12 +362,12 @@ class InfiniteDirectSamplerHMM():
                 print('new state')
                 # sampled beta
                 b = beta.rvs(1, self.sbp[GAMMA0], size=1)
-                self.sbp[BETA_VEC] = np.hstack((self.sbp[BETA_VEC], b*self.sbp[BETA_NEW]))
-                self.sbp[BETA_NEW] = (1-b)*self.sbp[BETA_NEW]
+                self.sbp[BETA_VEC] = np.hstack((self.sbp[BETA_VEC], b * self.sbp[BETA_NEW]))
+                self.sbp[BETA_NEW] = (1 - b) * self.sbp[BETA_NEW]
 
                 # update ss
-                self.ss[N_MAT] = np.hstack((self.ss[N_MAT], np.zeros((self.K,1))))
-                self.ss[N_MAT] = np.vstack((self.ss[N_MAT], np.zeros((1,self.K+1))))
+                self.ss[N_MAT] = np.hstack((self.ss[N_MAT], np.zeros((self.K, 1))))
+                self.ss[N_MAT] = np.vstack((self.ss[N_MAT], np.zeros((1, self.K + 1))))
                 self.ss[N_FT] = np.hstack((self.ss[N_FT], [0]))
                 self.ss[NK] = np.hstack((self.ss[NK], [0]))
                 self.K += 1
@@ -358,9 +376,9 @@ class InfiniteDirectSamplerHMM():
             self.add_x_to_z(t, x)
             self.handle_empty_components()
 
-        e = time.time()
+        # e = time.time()
 
-        print('for t in range(1, self.N): ', e - s)
+        # if self.verbose: print('for t in range(1, self.N): ', e - s)
 
         self.assign_first_point()
 
@@ -381,13 +399,13 @@ class InfiniteDirectSamplerHMM():
         # t is current index of z
         # x is data
         zt = self.Z[t]
-        j = self.Z[t-1]
+        j = self.Z[t - 1]
 
         self.ss[NK][zt] -= 1
-        self.ss[N_MAT][j, zt] -=1
+        self.ss[N_MAT][j, zt] -= 1
         if t + 1 < self.N:
-            l = self.Z[t+1]
-            self.ss[N_MAT][zt, l] -=1
+            l = self.Z[t + 1]
+            self.ss[N_MAT][zt, l] -= 1
 
         self.Z[t] = -1  # will be re-assigned above
 
@@ -395,13 +413,13 @@ class InfiniteDirectSamplerHMM():
         # t is current index of z
         # x is data
         zt = self.Z[t]
-        j = self.Z[t-1]
+        j = self.Z[t - 1]
 
         self.ss[NK][zt] += 1
-        self.ss[N_MAT][j, zt] +=1
+        self.ss[N_MAT][j, zt] += 1
         if t + 1 < self.N:
-            l = self.Z[t+1]
-            self.ss[N_MAT][zt, l] +=1
+            l = self.Z[t + 1]
+            self.ss[N_MAT][zt, l] += 1
 
     def handle_empty_components(self):
         nk = np.zeros(self.K)
@@ -415,27 +433,28 @@ class InfiniteDirectSamplerHMM():
             rem_ind = np.unique(self.Z)
             d = {k: v for v, k in enumerate(sorted(rem_ind))}
             self.Z = np.array([d[x] for x in self.Z])
-            self.ss[N_MAT] = self.ss[N_MAT][rem_ind][:,rem_ind]
+            self.ss[N_MAT] = self.ss[N_MAT][rem_ind][:, rem_ind]
             self.ss[N_FT] = self.ss[N_FT][rem_ind]
             self.ss[NK] = self.ss[NK][rem_ind]
             self.sbp[BETA_VEC] = self.sbp[BETA_VEC][rem_ind]
             self.K = len(rem_ind)
             self.update_ss()
 
-# [2.b] Sampling others
+    # [2.b] Sampling others
     def sample_aux_vars(self):
-        m_mat = np.zeros((self.K,self.K))
+        m_mat = np.zeros((self.K, self.K))
 
         for j in range(self.K):
             for k in range(self.K):
-                if self.ss[N_MAT][j,k] == 0:
-                    m_mat[j,k] = 0
+                if self.ss[N_MAT][j, k] == 0:
+                    m_mat[j, k] = 0
                 else:
                     # pretend multivariate to len(n_mat) at once and avoid loop
-                    x_vec = binomial(1, (self.sbp[ALPHA0]*self.sbp[BETA_VEC][k]+self.sbp[KAPPA0]*(j==k))
-                                     /(np.arange(self.ss[N_MAT][j,k])+self.sbp[ALPHA0]*self.sbp[BETA_VEC][k]+self.sbp[KAPPA0]*(j==k)))
+                    x_vec = binomial(1, (self.sbp[ALPHA0] * self.sbp[BETA_VEC][k] + self.sbp[KAPPA0] * (j == k))
+                                     / (np.arange(self.ss[N_MAT][j, k]) + self.sbp[ALPHA0] * self.sbp[BETA_VEC][k] +
+                                        self.sbp[KAPPA0] * (j == k)))
                     x_vec = np.array(x_vec).reshape(-1)
-                    m_mat[j,k] = sum(x_vec)
+                    m_mat[j, k] = sum(x_vec)
         self.aux[M_MAT] = m_mat
 
         w_vec = np.zeros(self.K)
@@ -444,22 +463,23 @@ class InfiniteDirectSamplerHMM():
         if self.sbp[RHO0] > 0:
             stick_ratio = self.sbp[RHO0]
             for j in range(self.K):
-                if m_mat[j,j]>0:
-                    w_vec[j] = binomial(m_mat[j,j], stick_ratio/(stick_ratio+self.sbp[BETA_VEC][j]*(1-stick_ratio)))
-                    m_mat_bar[j,j] = m_mat[j,j] - w_vec[j]
+                if m_mat[j, j] > 0:
+                    w_vec[j] = binomial(m_mat[j, j],
+                                        stick_ratio / (stick_ratio + self.sbp[BETA_VEC][j] * (1 - stick_ratio)))
+                    m_mat_bar[j, j] = m_mat[j, j] - w_vec[j]
 
         self.aux[W_VEC] = w_vec
         self.aux[M_MAT_BAR] = m_mat_bar
 
         # last time point
-        self.aux[M_MAT_BAR][0,0] += 1
-        self.aux[M_MAT][0,0] += 1
+        self.aux[M_MAT_BAR][0, 0] += 1
+        self.aux[M_MAT][0, 0] += 1
 
     def sample_beta(self):
         try:
             prob = (self.aux[M_MAT_BAR].sum(axis=0))
-            if(np.any(prob == 0)):
-                print('warning')
+            # if(np.any(prob == 0)):
+            #     print('warning')
             prob[prob == 0] += 0.01
             beta_vec = dirichlet.rvs(np.hstack((prob, self.sbp[GAMMA0])), size=1)[0]
             beta_new = beta_vec[-1]
@@ -491,7 +511,7 @@ class InfiniteDirectSamplerHMM():
             n_i = np.zeros(self.K)
             for j in range(self.K):
                 n_i[j] = np.count_nonzero(states == j)
-            n_mat[i,:] = n_i
+            n_mat[i, :] = n_i
 
         # n_ft
         n_ft = np.zeros((self.K))
@@ -506,7 +526,6 @@ class InfiniteDirectSamplerHMM():
 
             if np.all(self.ss[N_FT] == n_ft) != True:
                 print('warning self.nk == nk) != True:')
-
 
         self.ss[NK] = nk
         self.ss[N_MAT] = n_mat
@@ -528,53 +547,99 @@ class InfiniteDirectSamplerHMM():
             SIGMA_TRACE: [],
             A_TRACE: [],
             PIE_TRACE: [],
-            TIME: []
+            TIME: [],
+            NK: [],
+            'K': []
         }
 
+        converged = False
+        total_its = 0
         start_time = time.time()
+        current_component_count = self.K
 
-        for it in range(self.iterations):
+        for outer_it in range(self.outer_its):
 
-            start = time.time()
-            self.gibbs_sweep()
+            if self.verbose: print('outer it: ', outer_it)
 
-            # collect samples
-            A, pie = self.sample_pi()
-            mus, sigma = self.get_map_gauss_params()
+            for i in range(len(self.X_list)):
+                self.X = self.X_list[i]
+                self.N = self.X.shape[0]
+                # self.Z = self.hmm.predict(self.X)
+                self.init_z()
+                self.update_ss(True)
 
-            self.track[MU_TRACE].append(mus)
-            self.track[SIGMA_TRACE].append(sigma)
-            self.track[A_TRACE].append(A)
-            self.track[PIE_TRACE].append(pie)
+                for it in range(self.iterations):
+                    total_its += 1
 
-            if it > self.burn_in:
+                    start = time.time()
+                    self.gibbs_sweep()
 
-                if self.Z_true is not None:
-                    self.track[ARI][it] = np.round(ari(self.Z_true, self.Z), 3)
-                    print('iter: ', it, '   ARI: ', self.track[ARI][it], '    K: ',
-                          self.K)
+                    # collect samples
+                    A, pie = self.sample_pi()
+                    mus, sigma = self.get_map_gauss_params()
 
-                if it%10 == 0:
-                    _ = self.get_hmm()
-                    self.track[LL].append(self.get_likelihood())
-                    print('ll:  ', self.track[LL][-1])
+                    self.track[MU_TRACE].append(mus)
+                    self.track[SIGMA_TRACE].append(sigma)
+                    self.track[A_TRACE].append(A)
+                    self.track[PIE_TRACE].append(pie)
+                    self.track[NK].append(self.ss[NK])
+                    self.track['K'].append(self.K)
 
-            end = time.time()
-            self.track[TIME].append(end - start)
-            print('it: ', it, " -- ", end - start)
+                    if total_its > self.burn_in:
 
-                # Calculate ARI
-                #     if self.track[ARI][it] >= 0.98 and np.abs(self.track[LL][it] - self.track[LL][it-1]) < self.tol:
-                #         print('ARI has reached 1 complete')
-                #         break
+                        if self.Z_true is not None:
+                            self.track[ARI][it] = np.round(ari(self.Z_true, self.Z), 3)
+                            if self.verbose: print('iter: ', it, '   ARI: ', self.track[ARI][it], '    K: ',
+                                                   self.K)
 
+                    end = time.time()
+                    self.track[TIME].append(end - start)
+
+                    if total_its % 10 == 0:
+                        n_comps = int(np.round(np.min(self.track['K'][-50:])))
+                        _ = self.hmm_from_trace(n_comps, total_its=total_its)
+                        self.track[LL].append(self.get_likelihood())
+                        print('ll:  ', self.track[LL][-1])
+                        print('it: ', total_its, " -- ", end - start, 'nk: ', self.K)
+                        plot_hmm.plot_hmm_data(self.X, self.Z, self.K, mus, sigma, feature_a=0,
+                                               feature_b=1, legend=0,
+                                               title='It: ' + str(total_its) + ' Components: ' + str(self.K))
+
+                    if total_its % self.convergence_check == 0:
+                        # check for convergence
+                        if current_component_count == self.K:
+                            print('convergence criteria met!')
+                            converged = True  # inner it
+                            break
+                        else:
+                            current_component_count = self.K
+
+                    if total_its == self.max_its:
+                        print('Max its met!')
+                        converged = True  # inner it
+                        break
+
+                        # Calculate ARI
+                        #     if self.track[ARI][it] >= 0.98 and np.abs(self.track[LL][it] - self.track[LL][it-1]) < self.tol:
+                        #         print('ARI has reached 1 complete')
+                        #         break
+                # for next outter it
+                n_comps = int(np.round(np.min(self.track['K'][-50:])))
+                self.hmm_from_trace(n_comps, total_its=total_its)
+
+                if converged:  # x list
+                    break
+
+            if converged:  # outer it
+                break
 
         end_time = time.time()
         print('completed iterations in: ', end_time - start_time)
 
-        _ = self.get_hmm()
+        n_comps = int(np.round(np.min(self.track['K'][-50:])))
+        return self.hmm_from_trace(n_comps)
 
-# __________ Everything not part of gibbs sampling
+    # __________ Everything not part of gibbs sampling
     def get_map_gauss_params(self):
         """
         Return MAP estimate of the means and sigma, see murphy 4.215
@@ -594,7 +659,6 @@ class InfiniteDirectSamplerHMM():
             outer_c[i, :, :] = np.outer(self.X[i], self.X[i])
 
         for k in range(self.K):
-
             kn = k0 + self.ss[NK][k]
             nun = nu0 + self.ss[NK][k]
             mc = (k0 * m0) / kn
@@ -603,7 +667,7 @@ class InfiniteDirectSamplerHMM():
             Sx = np.sum(outer_c[self.Z == k], axis=0)
 
             # mn
-            mn_top_b = np.sum(self.X[self.Z == k], axis = 0)
+            mn_top_b = np.sum(self.X[self.Z == k], axis=0)
             mn = mc + mn_top_b / kn
 
             # Sn
@@ -615,21 +679,21 @@ class InfiniteDirectSamplerHMM():
         return mus, sigmas
 
     def sample_pi(self):
-        A = np.zeros((self.K,self.K))
+        A = np.zeros((self.K, self.K))
         for k in range(self.K):
-            prob_vec = np.hstack((self.sbp[ALPHA0]*self.sbp[BETA_VEC]+self.ss[N_MAT][k]))
+            prob_vec = np.hstack((self.sbp[ALPHA0] * self.sbp[BETA_VEC] + self.ss[N_MAT][k]))
             prob_vec[k] += self.sbp[KAPPA0]
-            prob_vec[prob_vec<0.01] = 0.01
+            prob_vec[prob_vec < 0.01] = 0.01
             A[k, :] = dirichlet.rvs(prob_vec, size=1)[0]
 
-        prob_vec = self.sbp[ALPHA0]*self.sbp[BETA_VEC] + self.ss[N_FT]
-        prob_vec[prob_vec<0.01] = 0.01
+        prob_vec = self.sbp[ALPHA0] * self.sbp[BETA_VEC] + self.ss[N_FT]
+        prob_vec[prob_vec < 0.01] = 0.01
         pie = dirichlet.rvs(prob_vec, size=1)[0]
         return A, pie
 
     def get_hmm(self):
         # create hmm from most recent params
-        if(len(self.track[A_TRACE]) > 0):
+        if (len(self.track[A_TRACE]) > 0):
             sigma = self.track[SIGMA_TRACE][-1]
             mu = self.track[MU_TRACE][-1]
             pie = self.track[PIE_TRACE][-1]
@@ -643,15 +707,53 @@ class InfiniteDirectSamplerHMM():
         self.hmm = hmm_updated
         return self.hmm
 
+    def hmm_from_trace(self, n_components, average_over=100, total_its=None):
+
+        if total_its is not None and total_its < 100:
+            average_over = total_its
+
+        nk_lens = [len(nk) for nk in self.track[NK]]
+        if not all(arr == nk_lens[0] for arr in nk_lens):
+            average_over = 1
+
+        # from the last 'average_over' its, get the sum
+        nk = np.copy(self.track[NK])[-average_over:]
+        nk_sum = np.sum(nk, axis=0)
+
+        largest_indices = np.argpartition(nk_sum, -n_components)[-n_components:]
+        # nk_sum_norm = (nk_sum / np.sum(nk_sum)) * 100
+
+        mu_matrix = np.mean(np.array(self.track[MU_TRACE][-average_over:]), axis=0)[largest_indices]
+        sigma_matrix = np.mean(np.array(self.track[SIGMA_TRACE][-average_over:]), axis=0)[largest_indices]
+        A = np.mean(np.array(self.track[A_TRACE][-average_over:]), axis=0)[largest_indices][:, largest_indices]
+        pi = np.mean(np.array(self.track[PIE_TRACE][-average_over:]), axis=0)[largest_indices]
+
+        hmm_trace = GaussianHMM(len(largest_indices), covariance_type='diag')
+        hmm_trace.n_features = mu_matrix.shape[1]
+        hmm_trace.transmat_, hmm_trace.startprob_, hmm_trace.means_ = self.normalize_matrix(
+            A), self.normalize_matrix(pi), mu_matrix
+        hmm_trace.covars_ = np.array([np.diag(i) for i in sigma_matrix])
+
+        self.hmm = hmm_trace
+        return hmm_trace
+
+    @staticmethod
+    def add_tiny_amount(matrix, tiny_amount=1e-5):
+        # Add tiny_amount to elements less than or equal to 0
+        matrix = np.where(matrix <= 0, matrix + tiny_amount, matrix)
+        return matrix
+
+    def normalize_matrix(self, matrix):
+        matrix = self.add_tiny_amount(matrix)
+        return matrix / np.sum(matrix, axis=(matrix.ndim - 1), keepdims=True)
+
     def get_likelihood(self):
         # likelihood of hmm, update hmmlearn object and using it for simplicity
-        log_prob, _ = self.hmm.decode(self.X[:200])
+        log_prob, _ = self.hmm.decode(self.X)
         return log_prob
+
 
 if __name__ == '__main__':
     print('demo')
     # my_hmm = InfiniteDirectSamplerHMM(loaded_data, 2, loaded_ss, iterations=40)
     # fit_vars = my_hmm.fit()
-
-
-
