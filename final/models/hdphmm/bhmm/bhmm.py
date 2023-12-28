@@ -116,13 +116,13 @@ class BayesianHMM:
         for k in range(K):
             x_k = self.X[self.Z == k]
             if len(x_k) < 10:
-                random_indices = np.random.randint(0, self.N, int(self.N * 0.1))
+                random_indices = np.random.randint(0, self.N, int(self.N * 0.8))
                 x_k = self.X[random_indices]
             sig_bar = np.cov(x_k.T, bias=True)
             diagsig[k] = np.diag(np.diag(sig_bar))
             self.mu[k] = self.x_bar[k]
             self.sigma[k] = np.diag(np.diag(sig_bar))
-            self.lambdas[k] = np.linalg.inv(sig_bar)
+            # self.lambdas[k] = np.linalg.inv(sig_bar)
 
         # sig_bar = np.cov(self.X.T, bias=True)
         universal_sig_bar = np.cov(self.X.T, bias=True)

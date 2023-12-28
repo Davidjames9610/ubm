@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 
 class HDPHMMWL():
     def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20, sbp=None,
-                 feature_a=0, feature_b=1, outer_its=1, convergence_check=100, max_it=1000):
+                 feature_a=0, feature_b=1, outer_its=1, convergence_check=100, max_it=1000, **kwargs):
         """
         [] input
         X_list = list of X
@@ -156,13 +156,13 @@ class HDPHMMWL():
         for k in range(self.K):
             x_k = self.X[self.Z == k]
             if len(x_k) < 10:
-                random_indices = np.random.randint(0, self.N, int(self.N * 0.1))
+                random_indices = np.random.randint(0, self.N, int(self.N * 0.8))
                 x_k = self.X[random_indices]
             sig_bar = np.cov(x_k.T, bias=True)
             diagsig[k] = np.diag(np.diag(sig_bar))
             self.mu[k] = self.x_bar[k]
             self.sigma[k] = np.diag(np.diag(sig_bar))
-            self.lambdas[k] = np.linalg.inv(sig_bar)
+            # self.lambdas[k] = np.linalg.inv(sig_bar)
 
         # Hyper-parameters for normals
         # Mu
@@ -197,9 +197,9 @@ class HDPHMMWL():
             self.kappa0 = self.sbp[KAPPA0]  # sticky-ness
             self.alpha0 = self.sbp[ALPHA0]  # concentration for 2nd stick breaking
         else:
-            self.gamma0 = 2  # concentration parameter for stick breaking
+            self.gamma0 = 10  # concentration parameter for stick breaking
             self.kappa0 = 10  # sticky-ness
-            self.alpha0 = 0.5  # concentration for 2nd stick breaking
+            self.alpha0 = 10  # concentration for 2nd stick breaking
 
         self.rho0 = self.kappa0 / (self.kappa0 + self.alpha0)
 
@@ -532,7 +532,7 @@ class HDPHMMWL():
                         self.trace['mu'].append(np.copy(self.mu))
                         self.trace['covar'].append(np.copy(self.sigma))
 
-                    if it % 50 == 0 and verbose:
+                    if total_its % 50 == 0 and verbose:
                         cur_ll = self.get_likelihood()
                         self.trace[LL].append(cur_ll)
                         if verbose: print('it: ', total_its, ' || Likelihood: ', cur_ll, ' || n_components: ', n_components)
@@ -565,7 +565,7 @@ class HDPHMMWL():
 
         # set amount of components from trace
         n_comps = int(np.round(np.mean(self.trace['n_components_all'][-50:])))
-        return self.hmm_from_trace(n_comps, 100)
+        return self.hmm_from_trace(n_comps, 200)
 
     def check_for_close_states(self, js_threshold=-2):
         self.create_hmm()  # update hmm
