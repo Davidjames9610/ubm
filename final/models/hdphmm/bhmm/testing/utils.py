@@ -1,6 +1,6 @@
 import time
 import numpy as np
-
+import json
 from final.models.hdphmm.bhmm import bhmm
 from final.models.hdphmm.hdphmmwl import hdphmmwl
 
@@ -19,17 +19,15 @@ def train_model(model_type, n_components, train_data, val_data, hmm_kwargs_arr):
     start_time = time.time()
 
     if model_type == 'bhmm':
-        my_bhmm = bhmm.BayesianHMM(X=np.concatenate(train_data), K=n_components,
-                                   **dict(sum(map(list, [hmm_kwargs.items() for hmm_kwargs in hmm_kwargs_arr]), [])))
+        my_bhmm = bhmm.BayesianHMM(X=np.concatenate(train_data), K=n_components, **hmm_kwargs_arr)
         curr_hmm = my_bhmm.fit()
         # save
         trained_model['model'] = curr_hmm
         trained_model['elbo'] = 0
-        trained_model['bnpy_model'] = my_bhmm
+        trained_model['bnpy_model'] = {} # json.dumps(my_bhmm)
         trained_model['bnpy_hist'] = {}
     elif model_type == 'wl_hdphmm':
-        my_hdphmm_wl = hdphmmwl.HDPHMMWL(np.concatenate(train_data), K=n_components,
-                                         **dict(sum(map(list, [hmm_kwargs.items() for hmm_kwargs in hmm_kwargs_arr]), [])))
+        my_hdphmm_wl = hdphmmwl.HDPHMMWL(np.concatenate(train_data), K=n_components, kwargs=hmm_kwargs_arr)
         curr_hmm = my_hdphmm_wl.fit_multiple(verbose=True)
         # hmmdiag_trained_model, hmmdiag_info_dict = bnpy.run(
         # train_data_bnpy, 'FiniteHMM', 'DiagGauss', 'EM',
@@ -40,7 +38,7 @@ def train_model(model_type, n_components, train_data, val_data, hmm_kwargs_arr):
         # save
         trained_model['model'] = curr_hmm
         trained_model['elbo'] = 0
-        trained_model['bnpy_model'] = my_hdphmm_wl
+        trained_model['bnpy_model'] = {} # json.dumps(my_hdphmm_wl)
         trained_model['bnpy_hist'] = {}
 
     # val
@@ -61,16 +59,17 @@ def get_all_results(model_types, num_components_to_test, whale_labels, whale_dat
     n_inits = test_args['n_inits']
     cv_amt = test_args['cv_amt']
 
-    all_whale_results = {}
+    all_results = {}
 
-    for whale_label in whale_labels:
+    for model_ind in range(len(model_types)):
+        print('testing for model_type: ', model_types[model_ind])
 
-        print('testing for whale type: ', whale_label)
-        all_results = {}
+        model_kwargs = bnpy_kwargs_arr[model_types[model_ind]]
 
-        for model_ind in range(len(model_types)):
+        all_whale_results = {}
+        for whale_label in whale_labels:
+            print('testing for whale type: ', whale_label)
 
-            print('testing for model_type: ', model_types[model_ind])
             model_results = {}
             results_per_component = {}  # results per dimension
             start_outer = time.time()
@@ -107,7 +106,7 @@ def get_all_results(model_types, num_components_to_test, whale_labels, whale_dat
                                 num_comps,
                                 train_for_whale,
                                 val_for_whale,
-                                bnpy_kwargs_arr,
+                                model_kwargs,
                             )
 
                         # Code that may raise an exception
@@ -153,8 +152,8 @@ def get_all_results(model_types, num_components_to_test, whale_labels, whale_dat
             model_results['total_its'] = cv_len * len(n_inits)
             model_results['component_list'] = num_components_to_test
 
-            all_results[model_types[model_ind]] = model_results
+            all_whale_results[whale_label] = model_results
 
-        all_whale_results[whale_label] = all_results
+        all_results[model_types[model_ind]] = all_whale_results
 
-    return all_whale_results
+    return all_results

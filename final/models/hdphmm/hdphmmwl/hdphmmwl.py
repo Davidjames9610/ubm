@@ -105,6 +105,12 @@ class HDPHMMWL():
         self.w_vec = None  # override variable for table t in restaurant j
         self.m_mat_bar = None  # number of tables in restaurant j that considered dish k
 
+        self.kwargs = kwargs
+        self.V0 = kwargs.get('V0', None)
+        self.nu0 = kwargs.get('nu0', None)
+        self.m0 = kwargs.get('m0', None)
+        self.S0 = kwargs.get('S0', None)
+
         self.init_sbp()
         self.init_z()
 
@@ -119,7 +125,7 @@ class HDPHMMWL():
 
         self.convergence_check = convergence_check
 
-    def init_z(self):
+    def init_z(self, **kwargs):
 
         Z_mat = np.random.multinomial(n=1, pvals=self.pi, size=self.N)
         _, self.Z = np.where(Z_mat == 1)  # N x 1 component number
@@ -137,7 +143,7 @@ class HDPHMMWL():
         replace_indices = np.random.choice(len(shuffled_labels), num_labels_to_replace, replace=False)
         shuffled_labels[replace_indices] = random_labels
         # Assign the shuffled labels to self.Z
-        self.Z = shuffled_labels
+        self.Z = kmeans.labels_  # shuffled_labels
         if self.Z_true is not None:
             print('init ari', np.round(ari(self.Z_true, self.Z), 3))
 
@@ -165,17 +171,20 @@ class HDPHMMWL():
             # self.lambdas[k] = np.linalg.inv(sig_bar)
 
         # Hyper-parameters for normals
-        # Mu
-        self.m0 = np.mean(self.X, axis=0)
-        # if np.isnan(self.m0).any():
-        #     print('nan')
-        # Sigma
-        uni_sig_bar = np.cov(self.X.T, bias=True)
+        if self.V0 is None:
+            self.V0 = np.eye(self.D) * 1
 
-        self.S0 = np.diag(np.diag(uni_sig_bar))
+        if self.m0 is None:
+            self.m0 = np.mean(self.X, axis=0)
 
-        self.V0 = np.eye(self.D) * 1000 # self.S0 # np.eye(self.D) * 1 # self.get_magnitude(np.max(self.S0)) # np.diag(np.diag(np.cov(self.X.T, bias=True)))
-        self.nu0 = np.copy(self.D) + 2  # 1 Degrees of freedom IW
+        if self.S0 is None:
+            uni_sig_bar = np.cov(self.X.T, bias=True)
+            self.S0 = np.diag(np.diag(uni_sig_bar))
+
+        if self.nu0 is None:
+            self.nu0 = np.copy(self.D) + 2
+
+        # * (self.get_magnitude(np.max(self.S0)) + 1) # self.S0 # np.eye(self.D) * 1 # self.get_magnitude(np.max(self.S0)) # np.diag(np.diag(np.cov(self.X.T, bias=True)))
 
     @staticmethod
     def get_magnitude(number):
@@ -476,6 +485,7 @@ class HDPHMMWL():
         self.trace['pie'] = []
         self.trace['mu'] = []
         self.trace['covar'] = []
+        self.trace['n_components_avg'] = []
         self.trace[TIME] = []
         self.trace[LL] = []
 
@@ -530,12 +540,25 @@ class HDPHMMWL():
                         self.trace['A'].append(np.copy(self.A))
                         self.trace['pie'].append(np.copy(self.pi))
                         self.trace['mu'].append(np.copy(self.mu))
+                        self.trace['n_components_avg'].append(np.mean(self.trace['n_components'][-50:]))
                         self.trace['covar'].append(np.copy(self.sigma))
+
+                    if total_its > 10:
+                        diff = self.trace['n_components_avg'][-1] - self.trace['n_components_avg'][-10]
+                        if np.abs(diff) < 0.5 and total_its > 100:
+                            print('convergence criteria met!')
+                            converged = True
+                            break
+                        print('avg: ', self.trace['n_components_avg'][-1],
+                              'diff: ', self.trace['n_components_avg'][-1] - self.trace['n_components_avg'][-10])
 
                     if total_its % 50 == 0 and verbose:
                         cur_ll = self.get_likelihood()
                         self.trace[LL].append(cur_ll)
-                        if verbose: print('it: ', total_its, ' || Likelihood: ', cur_ll, ' || n_components: ', n_components)
+                        if verbose: print('it: ', total_its, ' || Likelihood: ', cur_ll, ' || n_components: ',
+                                          n_components)
+                    if total_its % 100 == 0 and verbose:
+                        plot_hmm_learn(self.X, self.hmm, feature_a=self.feature_a, feature_b=self.feature_b)
 
                     # if total_its % 100 == 0 and verbose: self.plot_components_trace()
 
@@ -548,7 +571,7 @@ class HDPHMMWL():
                         else:
                             current_component_count = n_components
 
-                    if total_its % np.round(self.convergence_check/2) == 0:
+                    if total_its % np.round(self.convergence_check / 2) == 0:
                         imbetween_component_count = n_components
 
                     if total_its == self.max_it:

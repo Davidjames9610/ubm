@@ -18,7 +18,7 @@ from final.useful import *
 class BayesianHMM:
 
     def __init__(self, X, K, Z_true=None, burn_in=0, iterations=20, alpha0=1000, kappa0=10, verbose=False, outer_its=1,
-                 convergence_check=200, V0=None):
+                 convergence_check=200, V0=None, nu0=None):
         """
         [] input
         X = data n x d
@@ -89,7 +89,7 @@ class BayesianHMM:
         self.true_covars_ = [np.cov(self.X[kmeans.labels_ == i], rowvar=False) for i in range(K)]
 
         # shuffle labels
-        num_labels_to_replace = int(0.1 * len(kmeans.labels_))
+        num_labels_to_replace = int(0.8 * len(kmeans.labels_))
         # Generate random labels between 0 and k
         random_labels = np.random.randint(0, K, num_labels_to_replace)
         # Replace 10% of the labels with random numbers
@@ -97,7 +97,7 @@ class BayesianHMM:
         replace_indices = np.random.choice(len(shuffled_labels), num_labels_to_replace, replace=False)
         shuffled_labels[replace_indices] = random_labels
         # Assign the shuffled labels to self.Z
-        self.Z = shuffled_labels
+        self.Z = kmeans.labels_
         if self.Z_true is not None:
             print('init ari', np.round(ari(self.Z_true, self.Z), 3))
 
@@ -132,12 +132,15 @@ class BayesianHMM:
         # Mu
         self.m0 = np.mean(self.X, axis=0)
         # self.m0 = np.mean(self.X, axis=0)  # 1 x D
-        if V0:
+        if V0 is not None:
             self.V0 = V0
         else:
-            self.V0 = np.eye(self.D) * self.get_magnitude(max_S0)
+            self.V0 = np.eye(self.D) * 1000  # self.get_magnitude(max_S0)
 
-        self.nu0 = np.copy(self.D) + 2  # 1 Degrees of freedom IW
+        if nu0 is not None:
+            self.nu0 = nu0  # 1 Degrees of freedom IW
+        else:
+            self.nu0 = np.copy(self.D) + 2  # 1 Degrees of freedom IW
 
         self.mu_trace = []
         self.sigma_trace = []
@@ -209,6 +212,8 @@ class BayesianHMM:
         self.trace['mu'] = []
         self.trace['covar'] = []
         self.trace['time'] = 0
+        self.trace['n_components'] = []
+        self.trace['n_components_avg'] = []
 
         converged = False
         total_its = 0
@@ -224,6 +229,15 @@ class BayesianHMM:
                 self.X = self.X_list[i]
                 self.N = self.X.shape[0]
 
+                # update
+                # kmeans = KMeans(n_clusters=self.K, random_state=42)
+                # kmeans.fit(self.X)
+                # self.Z = kmeans.labels_
+                # self.handle_empty_components()
+                # self.update_ss()
+                # self.sample_theta()
+                # self.sample_a()
+
                 for it in range(self.iterations):
                     total_its += 1
                     self.gibbs_sweep()
@@ -235,6 +249,8 @@ class BayesianHMM:
                     self.trace['pie'].append(np.copy(self.pi))
                     self.trace['mu'].append(np.copy(self.mu))
                     self.trace['covar'].append(np.copy(self.sigma))
+                    self.trace['n_components'].append(self.K)
+                    self.trace['n_components_avg'].append(np.mean(self.trace['n_components'][-10:]))
 
                     # save trace
                     # if it > self.burn_in:
@@ -261,6 +277,15 @@ class BayesianHMM:
                         else:
                             current_component_count = self.K
 
+                    if total_its > 10:
+                        diff = self.trace['n_components_avg'][-1] - self.trace['n_components_avg'][-10]
+                        # if np.abs(diff) < 0.5 and total_its > 50:
+                        #     print('convergence criteria met! diff < 0.5: ', np.abs(diff))
+                        #     converged = True
+                        #     break
+                        print('it: ', total_its, 'avg: ',  self.trace['n_components_avg'][-1],
+                              'diff: ', self.trace['n_components_avg'][-1] - self.trace['n_components_avg'][-10])
+
                     # Calculate ARI
                     if self.Z_true is not None:
                         self.ARI[it] = np.round(ari(self.Z_true, self.Z), 3)
@@ -277,7 +302,11 @@ class BayesianHMM:
         print('Completed gibbs sampling -- Convergence: ', converged, ' -- In: ', end_time - start_time)
 
         if converged:
-            self.hmm = self.hmm_from_trace(self.K, 100)
+            new_hmm = self.hmm_from_trace(self.K, 20)
+            if new_hmm is not None:
+                self.hmm = new_hmm
+            else:
+                self.hmm = self.hmm_from_trace(self.K, 1)
             return self.hmm
         else:
             self.hmm = self.hmm_from_trace(self.K, 1)

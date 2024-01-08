@@ -23,9 +23,14 @@ NOISE = 'NOISE'
 HPB_WTK_DATA = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/watkins/92201001.wav'
 HPB_WTK_LABEL_ALL = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/watkins/92201001.txt'
 
+
 # 2. MBY
 HPB_MBY_DATA = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/moby/940302-1222.wav'
-
+HPB_MBY_LABEL_MOO = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/moby/moo.txt'
+HPB_MBY_LABEL_HIGH_MOO = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/moby/high_moo.txt'
+HPB_MBY_LABEL_LOW_MOO = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/moby/low_moo.txt'
+HPB_MBY_LABEL_PULSE = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/moby/pulse.txt'
+HPB_MBY_LABEL_SWOOP = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/moby/swoop.txt'
 # 3. Noise
 HPB_MBY_NOISE = r'/Users/david/Documents/mastersCode/ubm/whale/setup/data/humpback/moby/noise.txt'
 
